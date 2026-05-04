@@ -1,0 +1,26 @@
+# Local dependencies and tooling
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Downloaded course/tutorial content
+resources/
+
+# Logs and runtime noise
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+Thumbs.db
+
+# Editor/system metadata
+.vscode/
+.idea/

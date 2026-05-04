@@ -1,0 +1,16 @@
+services:
+  learning-platform:
+    build: .
+    container_name: learning-platform
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: 5177
+      LEARN_USERNAME: ${LEARN_USERNAME}
+      LEARN_PASSWORD: ${LEARN_PASSWORD}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-168}
+    ports:
+      - "127.0.0.1:5177:5177"
+    volumes:
+      - ./resources:/app/resources:ro

@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Learning Platform</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Private library</p>
+        <h1>Learning Platform</h1>
+      </div>
+      <div class="topbar-actions">
+        <div class="category-menus" aria-label="Study material">
+          <details id="courseMenu" class="category-menu">
+            <summary class="category-trigger">Courses</summary>
+            <div class="category-menu-panel">
+              <div id="courseLibraryList" class="library-options"></div>
+            </div>
+          </details>
+          <details id="tutorialMenu" class="category-menu">
+            <summary class="category-trigger">Tutorials</summary>
+            <div class="category-menu-panel">
+              <div id="tutorialLibraryList" class="library-options"></div>
+            </div>
+          </details>
+        </div>
+        <button id="logoutButton" class="ghost-button" type="button">Logout</button>
+      </div>
+    </header>
+
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Library and contents">
+        <section class="course-panel">
+          <div class="sidebar-sticky">
+            <div class="course-summary">
+              <div>
+                <p id="activeType" class="eyebrow">Ready</p>
+                <h2 id="activeTitle">Loading...</h2>
+              </div>
+              <a id="allResources" class="all-resources" href="#" hidden>All resources</a>
+            </div>
+
+            <div class="progress-panel" aria-live="polite">
+              <div class="progress-copy">
+                <strong id="overallPercent">0%</strong>
+                <span id="overallCount">Loading...</span>
+              </div>
+              <div class="progress-track" aria-hidden="true">
+                <div id="overallBar" class="progress-fill"></div>
+              </div>
+            </div>
+
+            <label class="search-box">
+              <span>Search</span>
+              <input id="courseSearch" type="search" placeholder="Section or lesson" autocomplete="off" />
+            </label>
+          </div>
+
+          <div id="sectionList" class="section-list"></div>
+        </section>
+      </aside>
+
+      <main id="courseMain" class="main course-main">
+        <section class="viewer-area" aria-label="Current lesson">
+          <div class="viewer-shell">
+            <button id="wideMode" class="viewer-toggle" type="button" aria-pressed="false">Wide view</button>
+            <div id="viewer" class="viewer loading">Loading library...</div>
+          </div>
+
+          <div class="lesson-bar">
+            <div class="lesson-heading">
+              <p id="lessonMeta" class="eyebrow">Ready</p>
+              <h2 id="lessonTitle">Loading...</h2>
+            </div>
+            <div class="lesson-actions">
+              <button id="prevLesson" type="button">Previous</button>
+              <button id="markComplete" type="button">Mark complete</button>
+              <button id="nextLesson" type="button">Next</button>
+            </div>
+          </div>
+
+          <div id="resourceStrip" class="resource-strip" hidden></div>
+        </section>
+
+        <section class="study-grid">
+          <div class="study-panel transcript-panel">
+            <div class="panel-heading">
+              <h3 id="supportTitle">Transcript</h3>
+              <input id="transcriptSearch" type="search" placeholder="Find text" autocomplete="off" />
+            </div>
+            <div id="transcriptList" class="transcript-list">
+              <p class="empty-state">Captions will appear here when the selected lesson has subtitles.</p>
+            </div>
+          </div>
+
+          <div class="study-panel notes-panel">
+            <div class="panel-heading">
+              <h3>Notes</h3>
+              <span id="noteStatus">Saved locally</span>
+            </div>
+            <textarea id="lessonNotes" placeholder="Write notes for this lesson"></textarea>
+          </div>
+        </section>
+      </main>
+
+      <main id="tutorialMain" class="tutorial-main" hidden>
+        <article class="tutorial-reader">
+          <header class="tutorial-reader-header">
+            <p id="tutorialMeta" class="eyebrow">Text tutorial</p>
+            <h2 id="tutorialTitle">Loading...</h2>
+            <div class="tutorial-actions">
+              <button id="tutorialPrev" type="button">Previous</button>
+              <button id="tutorialComplete" type="button">Mark complete</button>
+              <button id="tutorialNext" type="button">Next</button>
+            </div>
+          </header>
+          <div id="tutorialContent" class="tutorial-content">
+            <p class="empty-state">Loading article...</p>
+          </div>
+        </article>
+      </main>
+    </div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

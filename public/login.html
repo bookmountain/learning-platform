@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Login - Learning Platform</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="login-body">
+    <main class="login-shell">
+      <form id="loginForm" class="login-card">
+        <p class="eyebrow">Private library</p>
+        <h1>Learning Platform</h1>
+        <label>
+          <span>Username</span>
+          <input name="username" autocomplete="username" required />
+        </label>
+        <label>
+          <span>Password</span>
+          <input name="password" type="password" autocomplete="current-password" required />
+        </label>
+        <p id="loginError" class="login-error" role="alert"></p>
+        <button type="submit">Login</button>
+      </form>
+    </main>
+    <script>
+      const form = document.querySelector("#loginForm");
+      const error = document.querySelector("#loginError");
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        error.textContent = "";
+        const data = Object.fromEntries(new FormData(form));
+        const response = await fetch("/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        });
+        if (response.ok) {
+          window.location.href = "/";
+          return;
+        }
+        const body = await response.json().catch(() => ({}));
+        error.textContent = body.message || "Login failed";
+      });
+    </script>
+  </body>
+</html>
