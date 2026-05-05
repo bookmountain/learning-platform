@@ -271,7 +271,7 @@ async function scanVideoCourse(courseFolder) {
   const courseRel = toPosix(path.join("courses", courseFolder));
   const coursePath = path.join(resourcesRoot, courseRel);
   const sectionDirs = (await readChildDirs(coursePath))
-    .filter((name) => /^\d+\s+-\s+/.test(name))
+    .filter(isNumberedSectionFolder)
     .sort(naturalCompare);
 
   if (!sectionDirs.length) return null;
@@ -829,11 +829,15 @@ async function readCourseTitle(coursePath, fallback) {
   }
 }
 
+function isNumberedSectionFolder(folderName) {
+  return /^\d+[\s._)-]+/.test(folderName);
+}
+
 function parseSectionName(folderName) {
-  const match = folderName.match(/^(\d+)\s+-\s+(.+)$/);
+  const match = folderName.match(/^(\d+)(?:\s*[-.)]\s*|[\s._-]+)(.+)$/);
   return {
     index: match ? Number(match[1]) : 0,
-    title: match ? match[2] : folderName,
+    title: match ? humanTitle(match[2]) : folderName,
   };
 }
 

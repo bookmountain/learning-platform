@@ -155,7 +155,7 @@ python3 -m venv .venv
 
 This conversion is optional tooling. Python is not needed to run the web app. Keep any conversion scripts generic and avoid committing source-specific names or downloaded content.
 
-## Docker Hosting On vm100
+## Docker Hosting On VM
 
 Recommended shape for your Proxmox VM:
 
