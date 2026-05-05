@@ -11,6 +11,9 @@ const state = {
   activeCueIndex: -1,
   saveTimer: null,
   lastSavedAt: 0,
+  autoPlayCurrentVideo: false,
+  advanceTimer: null,
+  advanceRemaining: 0,
 };
 
 const els = {
@@ -74,8 +77,8 @@ async function init() {
 function bindEvents() {
   els.courseSearch.addEventListener("input", renderSidebar);
   els.transcriptSearch.addEventListener("input", renderTranscript);
-  els.prevLesson.addEventListener("click", () => moveLesson(-1));
-  els.nextLesson.addEventListener("click", () => moveLesson(1));
+  els.prevLesson.addEventListener("click", () => moveLesson(-1, { autoplay: true }));
+  els.nextLesson.addEventListener("click", () => moveLesson(1, { autoplay: true }));
   els.wideMode.addEventListener("click", () => setWideVideo(!state.wideVideo));
   els.tutorialPrev.addEventListener("click", () => moveLesson(-1));
   els.tutorialNext.addEventListener("click", () => moveLesson(1));
@@ -119,22 +122,23 @@ function selectItem(itemId, preferredLessonId = null) {
     section.lectures.map((lesson) => ({ ...lesson, section, item }))
   );
 
-  const rememberedId = preferredLessonId || state.progress.lastLessonByItem[item.id];
-  const remembered = state.lessons.find((lesson) => lesson.id === rememberedId);
-  const firstLesson = state.lessons[0];
+  const preferred = state.lessons.find((lesson) => lesson.id === preferredLessonId);
+  const progressLesson = preferred || progressTargetLesson();
 
   renderLibrary();
   renderItemHeader();
   renderProgress();
   renderSidebar();
-  selectLesson((remembered || firstLesson)?.id);
+  selectLesson(progressLesson?.id, { scrollFromTop: true });
 }
 
-function selectLesson(lessonId) {
+function selectLesson(lessonId, options = {}) {
   if (!lessonId) return;
   const lesson = state.lessons.find((candidate) => candidate.id === lessonId);
   if (!lesson) return;
 
+  stopAdvanceCountdown();
+  state.autoPlayCurrentVideo = Boolean(options.autoplay && lesson.video);
   state.currentId = lesson.id;
   state.progress.lastLessonId = lesson.id;
   state.progress.lastLessonByItem[lesson.item.id] = lesson.id;
@@ -142,6 +146,7 @@ function selectLesson(lessonId) {
 
   renderLesson(lesson);
   renderSidebar();
+  scrollActiveLessonIntoPlaylists({ fromTop: Boolean(options.scrollFromTop) });
   renderProgress();
 }
 
@@ -211,6 +216,7 @@ function applyWideVideo() {
   els.wideMode.textContent = activeForCourse ? "Standard view" : "Wide view";
   els.wideMode.setAttribute("aria-pressed", String(activeForCourse));
   els.wideMode.title = activeForCourse ? "Restore the sidebar layout" : "Hide the sidebar and widen the video";
+  if (activeForCourse) scrollActiveLessonIntoPlaylists();
 }
 
 function renderProgress() {
@@ -273,6 +279,7 @@ function renderSectionList(container, options = {}) {
     for (const lesson of lessonsToRender) {
       const button = document.createElement("button");
       button.type = "button";
+      button.dataset.lessonId = lesson.id;
       button.className = [
         "lesson-item",
         lesson.id === state.currentId ? "is-active" : "",
@@ -288,7 +295,7 @@ function renderSectionList(container, options = {}) {
         </span>
       `;
       button.addEventListener("click", () => {
-        selectLesson(lesson.id);
+        selectLesson(lesson.id, { autoplay: Boolean(lesson.video) });
         if (scrollToViewer && state.wideVideo) {
           els.courseMain.scrollTo({ top: 0, behavior: "smooth" });
         }
@@ -298,6 +305,54 @@ function renderSectionList(container, options = {}) {
     sectionNode.append(list);
     container.append(sectionNode);
   }
+}
+
+function scrollActiveLessonIntoPlaylists(options = {}) {
+  if (options.fromTop) {
+    els.sectionList.scrollTop = 0;
+    els.wideSectionList.scrollTop = 0;
+  }
+
+  const run = () => {
+    scrollActiveLessonInto(els.sectionList);
+    scrollActiveLessonInto(els.wideSectionList);
+  };
+
+  window.requestAnimationFrame(run);
+  window.setTimeout(run, 120);
+  window.setTimeout(run, 320);
+}
+
+function scrollActiveLessonInto(container) {
+  const selector = state.currentId ? `.lesson-item[data-lesson-id="${cssAttributeValue(state.currentId)}"]` : "";
+  const active = (selector && container.querySelector(selector)) || container.querySelector(".lesson-item.is-active");
+  if (!active || container.scrollHeight <= container.clientHeight) return;
+
+  const activeRect = active.getBoundingClientRect();
+  const containerRect = container.getBoundingClientRect();
+  const targetTop =
+    container.scrollTop + activeRect.top - containerRect.top - (container.clientHeight - activeRect.height) / 2;
+  container.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
+}
+
+function cssAttributeValue(value) {
+  return String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function progressTargetLesson() {
+  if (!state.lessons.length) return null;
+
+  let latestCompletedIndex = -1;
+  state.lessons.forEach((lesson, index) => {
+    if (state.progress.completed[lesson.id]) latestCompletedIndex = Math.max(latestCompletedIndex, index);
+  });
+
+  if (latestCompletedIndex === -1) return state.lessons[0];
+
+  const nextLesson = state.lessons
+    .slice(latestCompletedIndex + 1)
+    .find((lesson) => !state.progress.completed[lesson.id]);
+  return nextLesson || state.lessons[latestCompletedIndex] || state.lessons[0];
 }
 
 function renderLesson(lesson) {
@@ -374,7 +429,7 @@ function renderViewer(lesson) {
       video.append(track);
     }
 
-    video.addEventListener("loadedmetadata", () => {
+    const handleLoadedMetadata = () => {
       applyPlaybackPreferences(video);
       const savedTime = state.progress.positions[lesson.id] || 0;
       if (savedTime > 3 && savedTime < video.duration - 8) video.currentTime = savedTime;
@@ -382,7 +437,9 @@ function renderViewer(lesson) {
         state.progress.durations[lesson.id] = video.duration;
         saveProgress();
       }
-    });
+      if (state.autoPlayCurrentVideo) playSelectedVideo(video);
+    };
+    video.addEventListener("loadedmetadata", handleLoadedMetadata);
 
     video.addEventListener("ratechange", () => {
       state.progress.playback.rate = normalizePlaybackRate(video.playbackRate);
@@ -408,8 +465,17 @@ function renderViewer(lesson) {
       updateActiveCue(video.currentTime);
     });
 
-    video.addEventListener("ended", () => setComplete(lesson.id, true));
+    video.addEventListener("play", () => {
+      state.autoPlayCurrentVideo = false;
+      stopAdvanceCountdown();
+    });
+    video.addEventListener("ended", () => {
+      setComplete(lesson.id, true);
+      startAdvanceCountdown();
+    });
     els.viewer.append(video);
+    if (state.autoPlayCurrentVideo) playSelectedVideo(video);
+    if (video.readyState >= 1) handleLoadedMetadata();
     return;
   }
 
@@ -542,10 +608,61 @@ function seekTo(seconds) {
   video.play().catch(() => {});
 }
 
-function moveLesson(direction) {
+function playSelectedVideo(video) {
+  if (!video.paused) {
+    state.autoPlayCurrentVideo = false;
+    return;
+  }
+  video.play().catch(() => {
+    // Browser autoplay rules can still block playback outside a direct click.
+  });
+}
+
+function startAdvanceCountdown() {
+  const index = state.lessons.findIndex((lesson) => lesson.id === state.currentId);
+  const next = state.lessons[index + 1];
+  if (!next) return;
+
+  stopAdvanceCountdown();
+  state.advanceRemaining = 3;
+
+  const overlay = document.createElement("div");
+  overlay.className = "advance-overlay";
+  overlay.innerHTML = `
+    <div class="advance-card" role="status" aria-live="polite">
+      <p class="eyebrow">Up next</p>
+      <h3>${escapeHtml(next.title)}</h3>
+      <p class="advance-count">Next lesson in <strong>${state.advanceRemaining}</strong></p>
+      <button type="button">Next now</button>
+    </div>
+  `;
+  overlay.querySelector("button").addEventListener("click", () => moveLesson(1, { autoplay: true }));
+  els.viewer.append(overlay);
+
+  const count = overlay.querySelector(".advance-count strong");
+  state.advanceTimer = window.setInterval(() => {
+    state.advanceRemaining -= 1;
+    if (state.advanceRemaining <= 0) {
+      moveLesson(1, { autoplay: true });
+      return;
+    }
+    count.textContent = String(state.advanceRemaining);
+  }, 1000);
+}
+
+function stopAdvanceCountdown() {
+  if (state.advanceTimer) {
+    window.clearInterval(state.advanceTimer);
+    state.advanceTimer = null;
+  }
+  state.advanceRemaining = 0;
+  els.viewer.querySelector(".advance-overlay")?.remove();
+}
+
+function moveLesson(direction, options = {}) {
   const index = state.lessons.findIndex((lesson) => lesson.id === state.currentId);
   const next = state.lessons[index + direction];
-  if (next) selectLesson(next.id);
+  if (next) selectLesson(next.id, options);
 }
 
 function setComplete(lessonId, complete, options = {}) {

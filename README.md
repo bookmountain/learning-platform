@@ -2,7 +2,7 @@
 
 Private, lightweight learning platform for locally owned video courses and text tutorials.
 
-The app is intentionally a small skeleton: it scans a local `resources/` folder, builds a course/tutorial index, serves videos with captions, renders Markdown/tutorial documents, and tracks progress in the browser.
+The app is intentionally a small skeleton: it scans a local `resources/` folder, builds a course/tutorial index, serves videos with captions, renders Markdown/tutorial documents, and tracks progress/playback preferences in the browser.
 
 ## Stack
 
@@ -11,7 +11,7 @@ The app is intentionally a small skeleton: it scans a local `resources/` folder,
 - Frontend: vanilla HTML, CSS, and ES modules in `public/`.
 - Video: native HTML `<video>` with local media and subtitle tracks.
 - Text tutorials: Markdown/HTML rendered in the browser.
-- Progress and notes: browser `localStorage`.
+- Progress and playback preferences: browser `localStorage`.
 - Auth: username/password from environment variables, with in-memory HTTP-only cookie sessions.
 - Conversion tooling: optional Python script using Microsoft MarkItDown for one-time HTML-to-Markdown conversion.
 
@@ -28,6 +28,79 @@ resources/
 ```
 
 `resources/` is ignored by Git on purpose. Keep course videos, captions, PDFs, zips, and paid/downloaded material out of the repository.
+
+The server scans `resources/` when the library API is loaded, so adding/removing course content does not require a database. If you change code, restart the Node/Docker process; if you only add files under `resources/`, refresh the page.
+
+## Import A Raw Video Course
+
+Copy the downloaded course folder into `resources/courses/`:
+
+```text
+resources/
+  courses/
+    database-course/
+      01 - Getting Started/
+        001 Lesson title.mp4
+        001 Lesson title_en.srt
+        001 lesson-resource.sql
+      02 - Working With Data/
+        ...
+```
+
+Expected shape:
+
+- Course folders live directly under `resources/courses/`.
+- Section folders should start with a number, usually `01 - Section title`.
+- Lesson files should start with a lesson number, such as `001`, `002`, etc.
+- Videos and captions with the same lesson number are grouped together.
+- Extra files with the same lesson number become attached resources.
+- Unnumbered files inside a section are still treated as downloadable section resources.
+
+Supported video/caption types include `mp4`, `m4v`, `webm`, `mkv`, `mov`, `srt`, and `vtt`.
+
+## Import Text Tutorials
+
+Copy each tutorial into `resources/tutorials/`.
+
+Flat Markdown or HTML works:
+
+```text
+resources/tutorials/text-tutorial/
+  markdown/
+    0. Foreword.md
+    1. Join the Community.md
+```
+
+Sectioned Markdown also works:
+
+```text
+resources/tutorials/sectioned-text-tutorial/
+  sections/
+    01-introduction/
+      000-overview.md
+      001-course-structure.md
+    02-core-concepts/
+      002-first-topic.md
+  images/
+    overview-diagram.svg
+```
+
+The scanner supports these patterns:
+
+- `tutorial/markdown/*.md`
+- `tutorial/*.md`
+- `tutorial/sections/<number-title>/*.md`
+- `tutorial/markdown/<number-title>/*.md`
+
+Large external image folders are fine. You do not need to embed images as base64 in Markdown. Keep images under the same tutorial folder, then reference them with relative Markdown paths:
+
+```md
+![Diagram](../../images/example.svg)
+```
+
+The app rewrites local Markdown image paths to authenticated `/media/...` URLs when rendering the article. That keeps image-heavy exports, such as tutorials with hundreds of MB of diagrams, outside Git while still loading them in the reader.
+
+Common asset folders such as `images/`, `assets/`, `media/`, `static/`, `css/`, and `js/` are skipped as tutorial sections.
 
 ## Local Run
 
@@ -67,20 +140,20 @@ There is no user table yet. The server compares the submitted username/password 
 On successful login, it creates a random session ID, stores that session in memory, and sends the browser an HTTP-only cookie. This is fine for a private single-user app, but it means:
 
 - sessions are cleared when the Node process/container restarts;
-- progress and notes live in each browser's `localStorage`;
+- progress and playback preferences live in each browser's `localStorage`;
 - there is no multi-user account management.
 
 If this becomes multi-user, the next step is to use Postgres for hashed passwords, server-side progress, and notes.
 
-## Convert ByteByteGo HTML to Markdown
+## Convert HTML Tutorials to Markdown
 
 ```sh
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-.venv/bin/python scripts/convert_bytebytego_to_markdown.py
+.venv/bin/python scripts/convert_html_tutorial_to_markdown.py resources/tutorials/example-html-export
 ```
 
-This conversion is optional tooling. Python is not needed to run the web app.
+This conversion is optional tooling. Python is not needed to run the web app. Keep any conversion scripts generic and avoid committing source-specific names or downloaded content.
 
 ## Docker Hosting On vm100
 
@@ -124,16 +197,3 @@ http://127.0.0.1:5177
 ```
 
 For extra protection, put Cloudflare Access in front of the hostname too.
-
-## Git
-
-Initial repository setup:
-
-```sh
-git init
-git branch -M main
-git remote add origin https://github.com/bookmountain/learning-platform.git
-git add .
-git commit -m "first commit"
-git push -u origin main
-```

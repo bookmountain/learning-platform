@@ -248,9 +248,18 @@ p {
   color: white;
 }
 
+.viewer-toggle {
+  background: rgba(16, 20, 24, 0.86);
+  border-color: rgba(16, 20, 24, 0.18);
+}
+
 .lesson-actions button:hover,
 .viewer-toggle:hover {
   background: rgba(255, 255, 255, 0.16);
+}
+
+.viewer-toggle:hover {
+  background: rgba(16, 20, 24, 0.94);
 }
 
 .login-card button,
@@ -533,16 +542,26 @@ textarea:focus {
 }
 
 .wide-video-mode.course-mode .viewer-shell {
+  background: #050708;
+  display: block;
   margin: 0 auto;
-  max-width: 1600px;
+  max-width: 1920px;
   width: 100%;
 }
 
 .wide-video-mode.course-mode .viewer {
   aspect-ratio: auto;
-  height: min(70vh, calc(100vh - 230px), 820px);
+  background: #050708;
+  height: auto;
   max-height: none;
   min-height: 360px;
+  width: 100%;
+}
+
+.wide-video-mode.course-mode .viewer video {
+  height: auto;
+  max-width: none;
+  width: 100%;
 }
 
 .wide-video-mode.course-mode .study-grid {
@@ -739,7 +758,8 @@ textarea:focus {
 }
 
 .viewer-shell {
-  background: #050708;
+  background: var(--surface);
+  display: grid;
   position: relative;
 }
 
@@ -753,13 +773,14 @@ textarea:focus {
 
 .viewer {
   align-items: center;
-  aspect-ratio: 16 / 9;
-  background: #050708;
+  background: var(--surface);
   display: flex;
+  height: auto;
   justify-content: center;
-  max-height: 56vh;
+  max-height: none;
   min-height: 300px;
   overflow: hidden;
+  position: relative;
   width: 100%;
 }
 
@@ -769,16 +790,20 @@ textarea:focus {
   font-weight: 800;
 }
 
-.viewer video,
+.viewer video {
+  background: #050708;
+  border: 0;
+  display: block;
+  height: auto;
+  max-width: 100%;
+  object-fit: contain;
+  width: 100%;
+}
+
 .article-frame {
   border: 0;
   height: 100%;
   width: 100%;
-}
-
-.viewer video {
-  background: #050708;
-  object-fit: contain;
 }
 
 .document-viewer {
@@ -786,6 +811,62 @@ textarea:focus {
   background: white;
   height: min(62vh, 720px);
   max-height: none;
+  width: 100%;
+}
+
+.advance-overlay {
+  align-items: center;
+  background: rgba(5, 7, 8, 0.72);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 24px;
+  position: absolute;
+  z-index: 2;
+}
+
+.advance-card {
+  background: rgba(16, 20, 24, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.26);
+  color: white;
+  display: grid;
+  gap: 12px;
+  max-width: min(420px, 100%);
+  padding: 22px;
+  text-align: center;
+}
+
+.advance-card h3 {
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.advance-count {
+  color: #cbd5e1;
+  font-size: 15px;
+}
+
+.advance-count strong {
+  color: white;
+  font-size: 20px;
+}
+
+.advance-card button {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  color: white;
+  cursor: pointer;
+  font-weight: 800;
+  min-height: 38px;
+  padding: 0 14px;
+}
+
+.advance-card button:hover {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
 }
 
 .resource-viewer {
@@ -1082,7 +1163,7 @@ textarea:focus {
   }
 
   .viewer {
-    min-height: 220px;
+    min-height: 0;
   }
 
   .document-viewer {
@@ -1167,7 +1248,8 @@ textarea:focus {
   }
 
   .viewer {
-    max-height: 42vh;
+    height: auto;
+    max-height: none;
     min-height: 190px;
   }
 

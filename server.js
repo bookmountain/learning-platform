@@ -57,6 +57,12 @@ const mimeTypes = new Map([
   [".srt", "application/x-subrip; charset=utf-8"],
   [".pdf", "application/pdf"],
   [".zip", "application/zip"],
+  [".svg", "image/svg+xml"],
+  [".png", "image/png"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".webp", "image/webp"],
+  [".gif", "image/gif"],
   [".sql", "text/plain; charset=utf-8"],
   [".txt", "text/plain; charset=utf-8"],
   [".csv", "text/csv; charset=utf-8"],
@@ -361,28 +367,105 @@ async function scanVideoCourse(courseFolder) {
 async function scanTutorial(tutorialFolder) {
   const tutorialRel = toPosix(path.join("tutorials", tutorialFolder));
   const tutorialPath = path.join(resourcesRoot, tutorialRel);
+  const sections = await scanTutorialSections(tutorialRel, tutorialPath);
+
+  if (!sections.length) return null;
+
+  const lessonCount = sections.reduce((sum, section) => sum + section.lectures.length, 0);
+
+  const id = base64Url(`tutorial:${tutorialFolder}`);
+  return {
+    id,
+    type: "tutorial",
+    title: folderTitle(tutorialFolder),
+    folder: tutorialFolder,
+    path: tutorialRel,
+    allResourcesUrl: null,
+    counts: {
+      sections: sections.length,
+      lessons: lessonCount,
+      videos: 0,
+      captions: 0,
+      resources: 0,
+    },
+    sections,
+  };
+}
+
+async function scanTutorialSections(tutorialRel, tutorialPath) {
+  const explicitSectionsPath = path.join(tutorialPath, "sections");
+  if (await directoryExists(explicitSectionsPath)) {
+    const sections = await scanTutorialSectionDirs(
+      toPosix(path.join(tutorialRel, "sections")),
+      explicitSectionsPath
+    );
+    if (sections.length) return sections;
+  }
+
   const markdownPath = path.join(tutorialPath, "markdown");
-  const hasMarkdown = await directoryExists(markdownPath);
-  const scanRel = hasMarkdown ? toPosix(path.join(tutorialRel, "markdown")) : tutorialRel;
-  const scanPath = hasMarkdown ? markdownPath : tutorialPath;
-  const allowedExts = hasMarkdown ? new Set([".md", ".markdown"]) : tutorialExts;
-  const fileEntries = (await readdir(scanPath, { withFileTypes: true }))
+  if (await directoryExists(markdownPath)) {
+    const markdownRel = toPosix(path.join(tutorialRel, "markdown"));
+    const sections = await scanTutorialSectionDirs(markdownRel, markdownPath);
+    if (sections.length) return sections;
+
+    const flat = await scanTutorialFlatSection(markdownRel, markdownPath, {
+      index: 1,
+      title: "Articles",
+      idSeed: `${tutorialRel}:articles`,
+    });
+    return flat ? [flat] : [];
+  }
+
+  const flat = await scanTutorialFlatSection(tutorialRel, tutorialPath, {
+    index: 1,
+    title: "Articles",
+    idSeed: `${tutorialRel}:articles`,
+  });
+  if (flat) return [flat];
+
+  return scanTutorialSectionDirs(tutorialRel, tutorialPath);
+}
+
+async function scanTutorialSectionDirs(parentRel, parentPath) {
+  const sections = [];
+  const childDirs = await readChildDirs(parentPath);
+
+  for (const [fallbackIndex, sectionFolder] of childDirs.entries()) {
+    if (isAssetDirectory(sectionFolder)) continue;
+    const sectionPath = path.join(parentPath, sectionFolder);
+    const sectionRel = toPosix(path.join(parentRel, sectionFolder));
+    const parsed = parseTutorialSectionName(sectionFolder, fallbackIndex + 1);
+    const section = await scanTutorialFlatSection(sectionRel, sectionPath, {
+      index: parsed.index,
+      title: parsed.title,
+      folder: sectionFolder,
+      idSeed: sectionRel,
+    });
+    if (section) sections.push(section);
+  }
+
+  return sections.sort((a, b) => a.index - b.index || naturalCompare(a.title, b.title));
+}
+
+async function scanTutorialFlatSection(sectionRel, sectionPath, section) {
+  const fileEntries = (await readdir(sectionPath, { withFileTypes: true }))
     .filter((entry) => entry.isFile())
     .map((entry) => entry.name)
-    .filter((name) => !isIgnored(name) && allowedExts.has(path.extname(name).toLowerCase()))
+    .filter((name) => !isIgnored(name) && tutorialExts.has(path.extname(name).toLowerCase()))
     .filter((name) => name.toLowerCase() !== "index.html")
     .sort(naturalCompare);
 
   if (!fileEntries.length) return null;
 
   const assets = await Promise.all(
-    fileEntries.map((fileName) => makeAsset(toPosix(path.join(scanRel, fileName))))
+    fileEntries.map((fileName) => makeAsset(toPosix(path.join(sectionRel, fileName))))
   );
 
+  const sectionId = base64Url(section.idSeed || sectionRel);
   const lectures = assets.map((asset, index) => ({
     id: base64Url(asset.path),
-    sectionId: base64Url(`${tutorialRel}:articles`),
-    sectionIndex: 1,
+    sectionId,
+    sectionIndex: section.index,
     number: asset.number ?? index + 1,
     title: asset.title,
     type: "document",
@@ -394,35 +477,17 @@ async function scanTutorial(tutorialFolder) {
     resourceCount: 0,
   }));
 
-  const id = base64Url(`tutorial:${tutorialFolder}`);
   return {
-    id,
-    type: "tutorial",
-    title: folderTitle(tutorialFolder),
-    folder: tutorialFolder,
-    path: tutorialRel,
-    allResourcesUrl: null,
-    counts: {
-      sections: 1,
-      lessons: lectures.length,
-      videos: 0,
-      captions: 0,
-      resources: 0,
-    },
-    sections: [
-      {
-        id: base64Url(`${tutorialRel}:articles`),
-        index: 1,
-        title: "Articles",
-        folder: tutorialFolder,
-        path: tutorialRel,
-        resourceCount: 0,
-        resources: [],
-        unnumberedResources: [],
-        lectures,
-        downloadUrl: null,
-      },
-    ],
+    id: sectionId,
+    index: section.index,
+    title: section.title,
+    folder: section.folder || path.basename(sectionRel),
+    path: sectionRel,
+    resourceCount: 0,
+    resources: [],
+    unnumberedResources: [],
+    lectures,
+    downloadUrl: null,
   };
 }
 
@@ -502,7 +567,17 @@ async function servePublic(req, res, pathname) {
 
 async function serveFile(req, res, root, requestedPath, options) {
   const absolutePath = safeResolve(root, requestedPath);
-  const stats = await stat(absolutePath);
+  let stats;
+  try {
+    stats = await stat(absolutePath);
+  } catch (error) {
+    if (isMissingPathError(error)) {
+      sendText(res, 404, "Not found");
+      return;
+    }
+    throw error;
+  }
+
   if (!stats.isFile()) {
     sendText(res, 404, "Not found");
     return;
@@ -568,12 +643,14 @@ async function sendArticle(res, requestedPath) {
   }
 
   const text = await readFile(absolutePath, "utf8");
+  const articleDir = toPosix(path.dirname(requestedPath.replace(/\\/g, "/")));
+  const title = path.basename(absolutePath, ext);
   const body =
     ext === ".md" || ext === ".markdown"
-      ? wrapMarkdownDocument(text, path.basename(absolutePath, ext))
+      ? wrapMarkdownDocument(text, title, articleDir)
       : /<html[\s>]/i.test(text)
-        ? text
-        : wrapArticleFragment(text, path.basename(absolutePath, ext));
+        ? renderQuizAssignmentDocument(text, title, articleDir) || rewriteArticleAssetUrls(text, articleDir)
+        : wrapArticleFragment(rewriteArticleAssetUrls(text, articleDir), title);
   res.writeHead(200, {
     "Content-Type": "text/html; charset=utf-8",
     "Cache-Control": "no-cache",
@@ -746,7 +823,7 @@ async function readCourseTitle(coursePath, fallback) {
       .split(/\r?\n/)
       .map((line) => line.trim())
       .find(Boolean);
-    return firstLine ? firstLine.replace(/^Udemy\s+-\s+/i, "") : fallback;
+    return firstLine || fallback;
   } catch {
     return fallback;
   }
@@ -760,14 +837,19 @@ function parseSectionName(folderName) {
   };
 }
 
+function parseTutorialSectionName(folderName, fallbackIndex) {
+  const match = folderName.match(/^(\d+)[\s._-]+(.+)$/);
+  return {
+    index: match ? Number(match[1]) : fallbackIndex,
+    title: humanTitle(match ? match[2] : folderName),
+  };
+}
+
 function parseLectureFileName(stem) {
-  const match = stem.match(/^(\d{1,4})[.\s]+(.+)$/);
+  const match = stem.match(/^(\d{1,4})[.\s_-]+(.+)$/);
   return {
     number: match ? Number(match[1]) : null,
-    title: (match ? match[2] : stem)
-      .replace(/_en$/i, "")
-      .replace(/\s+/g, " ")
-      .trim(),
+    title: humanTitle(match ? match[2] : stem),
   };
 }
 
@@ -777,6 +859,12 @@ function normalizeStem(stem) {
 
 function isIgnored(name) {
   return name === "node_modules" || name.startsWith(".") || name.startsWith("._");
+}
+
+function isAssetDirectory(name) {
+  return ["asset", "assets", "image", "images", "img", "media", "static", "styles", "css", "js"].includes(
+    name.toLowerCase()
+  );
 }
 
 function isResource(asset) {
@@ -822,6 +910,49 @@ function wrapArticleFragment(fragment, title) {
       ol {
         margin: 0 0 1rem;
       }
+      h1 {
+        font-size: 34px;
+        line-height: 1.15;
+        margin: 0 0 24px;
+      }
+      h2 {
+        border-top: 1px solid #d8dee6;
+        font-size: 24px;
+        line-height: 1.2;
+        margin: 30px 0 14px;
+        padding-top: 22px;
+      }
+      h1 + h2 {
+        border-top: 0;
+        margin-top: 0;
+        padding-top: 0;
+      }
+      h3 {
+        font-size: 18px;
+        margin: 22px 0 10px;
+      }
+      pre {
+        background: #f5f7f9;
+        border: 1px solid #d8dee6;
+        border-radius: 8px;
+        color: #171a1f;
+        font-size: 14px;
+        line-height: 1.55;
+        margin: 0 0 18px;
+        overflow: auto;
+        padding: 16px;
+      }
+      pre code,
+      code pre {
+        background: transparent;
+        border: 0;
+        color: inherit;
+        padding: 0;
+      }
+      .article-muted {
+        color: #667085;
+        font-style: italic;
+      }
     </style>
   </head>
   <body>
@@ -830,7 +961,93 @@ function wrapArticleFragment(fragment, title) {
 </html>`;
 }
 
-function wrapMarkdownDocument(markdown, title) {
+function renderQuizAssignmentDocument(html, fallbackTitle, articleDir) {
+  const quizData = parseQuizData(html);
+  if (!quizData) return null;
+
+  const title = String(quizData.title || fallbackTitle);
+  const parts = [`<h1>${escapeHtml(title)}</h1>`];
+
+  parts.push("<h2>Instructions</h2>");
+  parts.push(renderAssignmentHtmlSection(quizData.instructions, quizData.hasInstructions, articleDir));
+
+  parts.push("<h2>Test(s)</h2>");
+  parts.push(renderAssignmentCodeItems(quizData.tests, quizData.hasTests, "Test"));
+
+  parts.push("<h2>Solution(s)</h2>");
+  parts.push(renderAssignmentCodeItems(quizData.solutions, quizData.hasSolutions, "Solution"));
+
+  return wrapArticleFragment(parts.join("\n"), title);
+}
+
+function parseQuizData(html) {
+  const declaration = html.search(/\b(?:const|let|var)\s+quizData\s*=/);
+  if (declaration === -1) return null;
+
+  const start = html.indexOf("{", declaration);
+  const json = extractBalancedObject(html, start);
+  if (!json) return null;
+
+  try {
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+function extractBalancedObject(text, start) {
+  if (start < 0) return null;
+
+  let depth = 0;
+  let quote = "";
+  let escaped = false;
+  for (let index = start; index < text.length; index += 1) {
+    const character = text[index];
+
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === quote) {
+        quote = "";
+      }
+      continue;
+    }
+
+    if (character === '"' || character === "'" || character === "`") {
+      quote = character;
+      continue;
+    }
+
+    if (character === "{") depth += 1;
+    if (character === "}") {
+      depth -= 1;
+      if (depth === 0) return text.slice(start, index + 1);
+    }
+  }
+
+  return null;
+}
+
+function renderAssignmentHtmlSection(value, hasContent, articleDir) {
+  const content = String(value || "");
+  if (!hasContent) return `<p class="article-muted">${escapeHtml(content)}</p>`;
+  return `<div>${rewriteArticleAssetUrls(content, articleDir)}</div>`;
+}
+
+function renderAssignmentCodeItems(value, hasContent, titlePrefix) {
+  if (!hasContent) return `<p class="article-muted">${escapeHtml(String(value || ""))}</p>`;
+  const items = Array.isArray(value) ? value : [value].filter(Boolean);
+  return items
+    .map((item, index) => {
+      const content = typeof item === "string" ? item : item?.content || JSON.stringify(item, null, 2);
+      return `<section><h3>${titlePrefix} ${index + 1}</h3><pre><code>${escapeHtml(content)}</code></pre></section>`;
+    })
+    .join("\n");
+}
+
+function wrapMarkdownDocument(markdown, title, articleDir) {
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -935,12 +1152,12 @@ function wrapMarkdownDocument(markdown, title) {
     </style>
   </head>
   <body>
-    <main>${markdownToHtml(markdown)}</main>
+    <main>${markdownToHtml(markdown, articleDir)}</main>
   </body>
 </html>`;
 }
 
-function markdownToHtml(markdown) {
+function markdownToHtml(markdown, articleDir = "") {
   const lines = markdown.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
   const html = [];
   let paragraph = [];
@@ -990,7 +1207,7 @@ function markdownToHtml(markdown) {
       flushParagraph();
       closeList();
       const alt = image[1].trim();
-      const src = image[2].trim();
+      const src = resolveArticleAssetUrl(markdownLinkTarget(image[2]), articleDir);
       html.push(
         `<figure><img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" loading="lazy" />${
           alt ? `<figcaption>${escapeHtml(alt)}</figcaption>` : ""
@@ -1046,6 +1263,38 @@ function markdownToHtml(markdown) {
   flushParagraph();
   closeList();
   return html.join("\n");
+}
+
+function rewriteArticleAssetUrls(html, articleDir) {
+  return html.replace(/\b(src)=("([^"]*)"|'([^']*)')/gi, (_match, attribute, quoted, doubleValue, singleValue) => {
+    const value = doubleValue ?? singleValue ?? "";
+    const quote = quoted.startsWith("'") ? "'" : '"';
+    return `${attribute}=${quote}${escapeHtml(resolveArticleAssetUrl(value, articleDir))}${quote}`;
+  });
+}
+
+function resolveArticleAssetUrl(value, articleDir) {
+  const target = markdownLinkTarget(value);
+  if (!target || isExternalUrl(target)) return target;
+  if (target.startsWith("/")) return target;
+
+  const normalized = path.posix.normalize(path.posix.join(articleDir, target));
+  if (normalized.startsWith("../")) return target;
+  return `/media/${encodePath(normalized)}`;
+}
+
+function markdownLinkTarget(value) {
+  const trimmed = String(value || "").trim().replace(/^<(.+)>$/, "$1");
+  const match = trimmed.match(/^([^"' \t]+)(?:\s+["'][^"']*["'])?$/);
+  return match ? match[1] : trimmed;
+}
+
+function isExternalUrl(value) {
+  return /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(value);
+}
+
+function isMissingPathError(error) {
+  return error?.code === "ENOENT" || error?.code === "ENOTDIR";
 }
 
 function inlineMarkdown(value) {
@@ -1215,13 +1464,22 @@ function base64Url(value) {
 }
 
 function folderTitle(folder) {
-  return folder
+  return humanTitle(folder)
     .replace(/[-_]+/g, " ")
     .replace(/\b(sql)\b/gi, "SQL")
     .replace(/\b(postgresql)\b/gi, "PostgreSQL")
-    .replace(/\b(bytebytego|bytebyego)\b/gi, "ByteByteGo")
     .replace(/\b\w/g, (letter) => letter.toUpperCase())
     .trim();
+}
+
+function humanTitle(value) {
+  const title = String(value)
+    .replace(/_en$/i, "")
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return title === title.toLowerCase() ? title.replace(/\b\w/g, (letter) => letter.toUpperCase()) : title;
 }
 
 function formatBytes(bytes) {
