@@ -545,6 +545,14 @@ textarea:focus {
   min-height: 360px;
 }
 
+.wide-video-mode.course-mode .study-grid {
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+}
+
+.wide-video-mode.course-mode .playlist-panel {
+  display: grid;
+}
+
 .tutorial-main {
   background: #ffffff;
   min-height: 0;
@@ -873,7 +881,7 @@ textarea:focus {
 .study-grid {
   display: grid;
   gap: 18px;
-  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+  grid-template-columns: minmax(0, 1fr);
   padding: 18px;
 }
 
@@ -949,17 +957,21 @@ textarea:focus {
   padding: 18px;
 }
 
-.notes-panel {
-  display: grid;
+.playlist-panel {
+  display: none;
   grid-template-rows: auto minmax(0, 1fr);
 }
 
-textarea {
-  border: 0;
-  min-height: 300px;
-  padding: 16px;
-  resize: vertical;
-  width: 100%;
+.playlist-section-list {
+  flex: initial;
+  max-height: 460px;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 12px;
+}
+
+.playlist-panel .section-block:first-child {
+  border-top: 0;
 }
 
 .login-body {

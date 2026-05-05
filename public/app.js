@@ -31,6 +31,8 @@ const els = {
   tutorialComplete: document.querySelector("#tutorialComplete"),
   sectionList: document.querySelector("#sectionList"),
   courseSearch: document.querySelector("#courseSearch"),
+  wideSectionList: document.querySelector("#wideSectionList"),
+  playlistCount: document.querySelector("#playlistCount"),
   overallPercent: document.querySelector("#overallPercent"),
   overallCount: document.querySelector("#overallCount"),
   overallBar: document.querySelector("#overallBar"),
@@ -45,8 +47,6 @@ const els = {
   supportTitle: document.querySelector("#supportTitle"),
   transcriptList: document.querySelector("#transcriptList"),
   transcriptSearch: document.querySelector("#transcriptSearch"),
-  lessonNotes: document.querySelector("#lessonNotes"),
-  noteStatus: document.querySelector("#noteStatus"),
   logoutButton: document.querySelector("#logoutButton"),
 };
 
@@ -88,17 +88,6 @@ function bindEvents() {
     const lesson = currentLesson();
     if (!lesson) return;
     setComplete(lesson.id, !state.progress.completed[lesson.id]);
-  });
-  els.lessonNotes.addEventListener("input", () => {
-    const lesson = currentLesson();
-    if (!lesson) return;
-    state.progress.notes[lesson.id] = els.lessonNotes.value;
-    els.noteStatus.textContent = "Saving...";
-    window.clearTimeout(state.saveTimer);
-    state.saveTimer = window.setTimeout(() => {
-      saveProgress();
-      els.noteStatus.textContent = "Saved locally";
-    }, 300);
   });
   els.logoutButton.addEventListener("click", async () => {
     await fetch("/auth/logout", { method: "POST" });
@@ -235,7 +224,18 @@ function renderProgress() {
 
 function renderSidebar() {
   const query = els.courseSearch.value.trim().toLowerCase();
-  els.sectionList.innerHTML = "";
+  renderSectionList(els.sectionList, { query, showResources: true });
+  renderWidePlaylist();
+}
+
+function renderWidePlaylist() {
+  els.playlistCount.textContent = `${state.lessons.length} lesson${state.lessons.length === 1 ? "" : "s"}`;
+  renderSectionList(els.wideSectionList, { query: "", showResources: false, scrollToViewer: true });
+}
+
+function renderSectionList(container, options = {}) {
+  const { query = "", showResources = true, scrollToViewer = false } = options;
+  container.innerHTML = "";
 
   for (const section of state.activeItem.sections) {
     const matchingLessons = section.lectures.filter((lesson) => lessonMatches(lesson, section, query));
@@ -257,7 +257,7 @@ function renderSidebar() {
     `;
     sectionNode.append(header);
 
-    if (section.resourceCount > 0 && section.downloadUrl) {
+    if (showResources && section.resourceCount > 0 && section.downloadUrl) {
       const resourceRow = document.createElement("div");
       resourceRow.className = "section-resource-row";
       resourceRow.innerHTML = `
@@ -287,11 +287,16 @@ function renderSidebar() {
           <span class="lesson-kind">${lesson.type}${lesson.resourceCount ? ` / ${lesson.resourceCount} resources` : ""}</span>
         </span>
       `;
-      button.addEventListener("click", () => selectLesson(lesson.id));
+      button.addEventListener("click", () => {
+        selectLesson(lesson.id);
+        if (scrollToViewer && state.wideVideo) {
+          els.courseMain.scrollTo({ top: 0, behavior: "smooth" });
+        }
+      });
       list.append(button);
     }
     sectionNode.append(list);
-    els.sectionList.append(sectionNode);
+    container.append(sectionNode);
   }
 }
 
@@ -314,7 +319,6 @@ function renderCourseLesson(lesson) {
   updateMarkButton();
   renderResources(lesson);
   renderViewer(lesson);
-  renderNotes(lesson);
   loadTranscript(lesson);
 }
 
@@ -358,6 +362,7 @@ function renderViewer(lesson) {
     video.playsInline = true;
     video.preload = "metadata";
     video.src = lesson.video.mediaUrl;
+    applyPlaybackPreferences(video);
 
     if (lesson.caption) {
       const track = document.createElement("track");
@@ -370,12 +375,24 @@ function renderViewer(lesson) {
     }
 
     video.addEventListener("loadedmetadata", () => {
+      applyPlaybackPreferences(video);
       const savedTime = state.progress.positions[lesson.id] || 0;
       if (savedTime > 3 && savedTime < video.duration - 8) video.currentTime = savedTime;
       if (Number.isFinite(video.duration)) {
         state.progress.durations[lesson.id] = video.duration;
         saveProgress();
       }
+    });
+
+    video.addEventListener("ratechange", () => {
+      state.progress.playback.rate = normalizePlaybackRate(video.playbackRate);
+      saveProgress();
+    });
+
+    video.addEventListener("volumechange", () => {
+      state.progress.playback.volume = clamp(video.volume, 0, 1);
+      state.progress.playback.muted = Boolean(video.muted);
+      saveProgress();
     });
 
     video.addEventListener("timeupdate", () => {
@@ -503,11 +520,6 @@ function renderTranscript() {
   }
 }
 
-function renderNotes(lesson) {
-  els.lessonNotes.value = state.progress.notes[lesson.id] || "";
-  els.noteStatus.textContent = "Saved locally";
-}
-
 function updateActiveCue(time) {
   if (!state.transcript.length) return;
   const nextIndex = state.transcript.findIndex((cue) => time >= cue.start && time <= cue.end);
@@ -543,12 +555,6 @@ function setComplete(lessonId, complete, options = {}) {
   renderProgress();
   renderSidebar();
   updateMarkButton();
-  if (!options.quiet) {
-    els.noteStatus.textContent = complete ? "Lesson complete" : "Lesson reopened";
-    window.setTimeout(() => {
-      els.noteStatus.textContent = "Saved locally";
-    }, 900);
-  }
 }
 
 function updateMarkButton() {
@@ -578,27 +584,64 @@ function throttledSave() {
 
 function loadProgress() {
   try {
-    return {
-      completed: {},
-      positions: {},
-      durations: {},
-      notes: {},
-      lastItemId: null,
-      lastLessonId: null,
-      lastLessonByItem: {},
-      ...JSON.parse(localStorage.getItem(storageKey) || "{}"),
-    };
+    return normalizeProgress(JSON.parse(localStorage.getItem(storageKey) || "{}"));
   } catch {
-    return {
-      completed: {},
-      positions: {},
-      durations: {},
-      notes: {},
-      lastItemId: null,
-      lastLessonId: null,
-      lastLessonByItem: {},
-    };
+    return defaultProgress();
   }
+}
+
+function defaultProgress() {
+  return {
+    completed: {},
+    positions: {},
+    durations: {},
+    notes: {},
+    playback: {
+      rate: 1,
+      volume: 1,
+      muted: false,
+    },
+    lastItemId: null,
+    lastLessonId: null,
+    lastLessonByItem: {},
+  };
+}
+
+function normalizeProgress(saved = {}) {
+  const defaults = defaultProgress();
+  return {
+    ...defaults,
+    ...saved,
+    completed: saved.completed || defaults.completed,
+    positions: saved.positions || defaults.positions,
+    durations: saved.durations || defaults.durations,
+    notes: saved.notes || defaults.notes,
+    playback: {
+      ...defaults.playback,
+      ...(saved.playback || {}),
+      rate: normalizePlaybackRate(saved.playback?.rate ?? defaults.playback.rate),
+      volume: clamp(Number(saved.playback?.volume ?? defaults.playback.volume), 0, 1),
+      muted: Boolean(saved.playback?.muted ?? defaults.playback.muted),
+    },
+    lastLessonByItem: saved.lastLessonByItem || defaults.lastLessonByItem,
+  };
+}
+
+function applyPlaybackPreferences(video) {
+  const preferences = state.progress.playback || defaultProgress().playback;
+  video.defaultPlaybackRate = normalizePlaybackRate(preferences.rate);
+  video.playbackRate = normalizePlaybackRate(preferences.rate);
+  video.volume = clamp(Number(preferences.volume ?? 1), 0, 1);
+  video.muted = Boolean(preferences.muted);
+}
+
+function normalizePlaybackRate(value) {
+  const rate = Number(value);
+  return Number.isFinite(rate) ? clamp(rate, 0.25, 4) : 1;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function saveProgress() {
