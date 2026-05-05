@@ -14,5 +14,5 @@ services:
     ports:
       - "127.0.0.1:5177:5177"
     volumes:
-      - ./resources:/app/resources:ro
-      - ./data:/app/data
+      - ${LEARNING_RESOURCES_DIR:-./resources}:/app/resources:ro
+      - ${LEARNING_DATA_DIR:-./data}:/app/data

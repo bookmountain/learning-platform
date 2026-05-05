@@ -188,14 +188,28 @@ cd learning-platform
 mkdir -p resources/courses resources/tutorials data
 ```
 
-Copy your course/tutorial folders into `resources/`, then create an uncommitted `.env`:
+Copy your course/tutorial folders into `resources/`, or point Docker at an existing library folder. The folder mounted into the container must contain `courses/` and `tutorials/`.
+
+For example, if your VM already has this:
+
+```text
+/home/book/learnings/
+  courses/
+  tutorials/
+```
+
+create an uncommitted `.env` like this:
 
 ```sh
 LEARN_USERNAME=bookm
 LEARN_PASSWORD=change-this-to-a-long-random-password
 COOKIE_SECURE=true
 SESSION_TTL_HOURS=168
+LEARNING_RESOURCES_DIR=/home/book/learnings
+LEARNING_DATA_DIR=./data
 ```
+
+Use the full absolute path for `LEARNING_RESOURCES_DIR`; do not use `~` there.
 
 Start it:
 
@@ -204,7 +218,8 @@ docker compose -f docker-compose.example.yml --env-file .env up -d --build
 ```
 
 The compose file binds the app to `127.0.0.1:5177`, which is safer when Cloudflare Tunnel or a local reverse proxy is the public entry point.
-It also mounts `./data:/app/data` so `progress.sqlite3` survives rebuilds.
+It mounts `${LEARNING_RESOURCES_DIR:-./resources}:/app/resources:ro`, so the app can scan course/tutorial files outside the Git repo.
+It also mounts `${LEARNING_DATA_DIR:-./data}:/app/data` so `progress.sqlite3` survives rebuilds.
 
 Cloudflare Tunnel public hostname target:
 

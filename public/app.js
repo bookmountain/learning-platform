@@ -64,6 +64,10 @@ async function init() {
     state.library = await fetchJson("/api/library");
     bindEvents();
     renderLibrary();
+    if (!state.library.items.length) {
+      renderEmptyLibrary();
+      return;
+    }
     const rememberedItem =
       state.library.items.find((item) => item.id === state.progress.lastItemId) || state.library.items[0];
     selectItem(rememberedItem?.id);
@@ -187,6 +191,31 @@ function renderLibrary() {
   els.tutorialMenu.hidden = tutorialCount === 0;
   els.courseMenu.classList.toggle("is-active", state.activeItem?.type !== "tutorial");
   els.tutorialMenu.classList.toggle("is-active", state.activeItem?.type === "tutorial");
+}
+
+function renderEmptyLibrary() {
+  state.activeItem = null;
+  state.lessons = [];
+  state.currentId = null;
+  document.body.classList.remove("tutorial-mode", "wide-video-mode");
+  document.body.classList.add("course-mode");
+  els.courseMain.hidden = false;
+  els.tutorialMain.hidden = true;
+  els.activeType.textContent = "No materials";
+  els.activeTitle.textContent = "Nothing found";
+  els.allResources.hidden = true;
+  els.overallPercent.textContent = "0%";
+  els.overallCount.textContent = "No lessons scanned";
+  els.overallBar.style.width = "0%";
+  els.sectionList.innerHTML = `<p class="empty-state">No courses or tutorials were found in the mounted resources folder.</p>`;
+  els.viewer.className = "viewer error";
+  els.viewer.innerHTML = `<p>No learning materials found.</p>`;
+  els.lessonMeta.textContent = "Ready";
+  els.lessonTitle.textContent = "No lesson selected";
+  els.resourceStrip.hidden = true;
+  els.transcriptList.innerHTML = `<p class="empty-state">Mount a folder containing courses/ and tutorials/ into /app/resources.</p>`;
+  els.playlistCount.textContent = "0 lessons";
+  els.wideSectionList.innerHTML = "";
 }
 
 function closeCategoryMenus() {
