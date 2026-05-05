@@ -10,7 +10,9 @@ services:
       LEARN_PASSWORD: ${LEARN_PASSWORD}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-168}
+      DATA_DIR: /app/data
     ports:
       - "127.0.0.1:5177:5177"
     volumes:
       - ./resources:/app/resources:ro
+      - ./data:/app/data

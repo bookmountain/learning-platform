@@ -182,6 +182,7 @@ p {
 .library-option strong {
   font-size: 14px;
   line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 
 .library-option small {
@@ -1195,6 +1196,48 @@ textarea:focus {
   }
 }
 
+@media (max-width: 760px) {
+  .topbar {
+    align-items: stretch;
+    flex-wrap: wrap;
+    gap: 12px;
+    height: auto;
+    min-height: 64px;
+    padding-bottom: 12px;
+    padding-top: 12px;
+  }
+
+  .topbar-actions {
+    align-items: stretch;
+    flex: 1 1 100%;
+  }
+
+  .category-menus {
+    flex: 1 1 auto;
+    min-width: 0;
+    position: relative;
+  }
+
+  .category-menu {
+    flex: 1 1 0;
+    position: static;
+  }
+
+  .category-trigger {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .category-menu-panel {
+    left: 0;
+    max-height: min(56vh, 430px);
+    overflow-y: auto;
+    right: 0;
+    top: calc(100% + 8px);
+    width: 100%;
+  }
+}
+
 @media (max-width: 560px) {
   .topbar,
   .course-summary,
@@ -1211,40 +1254,12 @@ textarea:focus {
     font-size: 18px;
   }
 
-  .topbar {
-    align-items: stretch;
-    flex-wrap: wrap;
-    gap: 10px;
-    height: auto;
-    min-height: 64px;
-    padding-bottom: 10px;
-    padding-top: 10px;
-  }
-
   .topbar-actions {
-    align-items: stretch;
-    flex: 1 1 100%;
     flex-direction: row;
   }
 
   .category-menus {
-    flex: 1 1 auto;
     min-width: 0;
-  }
-
-  .category-menu {
-    flex: 1 1 0;
-  }
-
-  .category-trigger {
-    justify-content: center;
-    width: 100%;
-  }
-
-  .category-menu-panel {
-    left: auto;
-    right: 0;
-    width: min(360px, calc(100vw - 28px));
   }
 
   .viewer {

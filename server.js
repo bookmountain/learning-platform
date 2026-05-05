@@ -1,7 +1,8 @@
-import { createReadStream } from "node:fs";
+import { createReadStream, mkdirSync } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
+import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -10,6 +11,10 @@ const publicRoot = path.join(appRoot, "public");
 const resourcesRoot = path.join(appRoot, "resources");
 const coursesRoot = path.join(resourcesRoot, "courses");
 const tutorialsRoot = path.join(resourcesRoot, "tutorials");
+const dataRoot = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(appRoot, "data");
+const progressDbPath = process.env.PROGRESS_DB_PATH
+  ? path.resolve(process.env.PROGRESS_DB_PATH)
+  : path.join(dataRoot, "progress.sqlite3");
 const port = Number(process.env.PORT || process.argv[2] || 5177);
 const host = process.env.HOST || "127.0.0.1";
 
@@ -19,6 +24,7 @@ const cookieSecure = process.env.COOKIE_SECURE === "true";
 const sessionCookie = "lp_session";
 const sessionTtlMs = Number(process.env.SESSION_TTL_HOURS || 168) * 60 * 60 * 1000;
 const sessions = new Map();
+const progressDb = openProgressDatabase();
 
 const videoExts = new Set([".mp4", ".m4v", ".webm", ".mkv", ".mov"]);
 const captionExts = new Set([".srt", ".vtt"]);
@@ -119,6 +125,16 @@ createServer(async (req, res) => {
 
     if (pathname === "/api/course") {
       sendJson(res, await scanLibrary());
+      return;
+    }
+
+    if (pathname === "/api/progress" && req.method === "GET") {
+      sendJson(res, readStoredProgress(authUser));
+      return;
+    }
+
+    if (pathname === "/api/progress" && req.method === "POST") {
+      await handleProgressSave(req, res);
       return;
     }
 
@@ -231,6 +247,73 @@ function requireLogin(req, res) {
     return;
   }
   sendJson(res, { ok: false, message: "Login required" }, 401);
+}
+
+async function handleProgressSave(req, res) {
+  const body = await readRequestBody(req, 5 * 1024 * 1024);
+  let data;
+  try {
+    data = JSON.parse(body || "{}");
+  } catch {
+    sendJson(res, { ok: false, message: "Invalid progress payload" }, 400);
+    return;
+  }
+  const progress = normalizeStoredProgress(data.progress ?? data);
+  const saved = writeStoredProgress(authUser, progress);
+  sendJson(res, { ok: true, updatedAt: saved.updatedAt });
+}
+
+function openProgressDatabase() {
+  mkdirSync(path.dirname(progressDbPath), { recursive: true });
+  const database = new DatabaseSync(progressDbPath);
+  database.exec(`
+    PRAGMA journal_mode = WAL;
+    CREATE TABLE IF NOT EXISTS user_progress (
+      user TEXT PRIMARY KEY,
+      progress_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+  return database;
+}
+
+function readStoredProgress(user) {
+  const row = progressDb
+    .prepare("SELECT progress_json, updated_at FROM user_progress WHERE user = ?")
+    .get(user);
+  if (!row) {
+    return { ok: true, progress: null, updatedAt: null };
+  }
+
+  try {
+    return {
+      ok: true,
+      progress: normalizeStoredProgress(JSON.parse(row.progress_json)),
+      updatedAt: row.updated_at,
+    };
+  } catch {
+    return { ok: true, progress: null, updatedAt: row.updated_at };
+  }
+}
+
+function writeStoredProgress(user, progress) {
+  const normalized = normalizeStoredProgress(progress);
+  const updatedAt = new Date().toISOString();
+  progressDb
+    .prepare(
+      `INSERT INTO user_progress (user, progress_json, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(user) DO UPDATE SET
+         progress_json = excluded.progress_json,
+         updated_at = excluded.updated_at`
+    )
+    .run(user, JSON.stringify(normalized), updatedAt);
+  return { progress: normalized, updatedAt };
+}
+
+function normalizeStoredProgress(progress) {
+  if (!progress || typeof progress !== "object" || Array.isArray(progress)) return {};
+  return progress;
 }
 
 async function scanLibrary() {

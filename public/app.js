@@ -5,11 +5,14 @@ const state = {
   activeItem: null,
   lessons: [],
   currentId: null,
-  progress: loadProgress(),
+  progress: loadLocalProgress(),
   wideVideo: localStorage.getItem(layoutKey) === "wide-video",
   transcript: [],
   activeCueIndex: -1,
   saveTimer: null,
+  serverSaveTimer: null,
+  serverSaveInFlight: false,
+  serverSavePending: false,
   lastSavedAt: 0,
   autoPlayCurrentVideo: false,
   advanceTimer: null,
@@ -57,6 +60,7 @@ init();
 
 async function init() {
   try {
+    state.progress = await loadProgress();
     state.library = await fetchJson("/api/library");
     bindEvents();
     renderLibrary();
@@ -699,7 +703,26 @@ function throttledSave() {
   saveProgress();
 }
 
-function loadProgress() {
+async function loadProgress() {
+  const localProgress = loadLocalProgress();
+  try {
+    const payload = await fetchJson("/api/progress");
+    if (payload.progress) {
+      const progress = normalizeProgress(payload.progress);
+      localStorage.setItem(storageKey, JSON.stringify(progress));
+      return progress;
+    }
+
+    await saveProgressToServer(localProgress);
+    return localProgress;
+  } catch (error) {
+    if (error.status === 401) throw error;
+    console.warn("Server progress could not be loaded; using this browser's local progress.", error);
+    return localProgress;
+  }
+}
+
+function loadLocalProgress() {
   try {
     return normalizeProgress(JSON.parse(localStorage.getItem(storageKey) || "{}"));
   } catch {
@@ -763,6 +786,43 @@ function clamp(value, min, max) {
 
 function saveProgress() {
   localStorage.setItem(storageKey, JSON.stringify(state.progress));
+  queueServerProgressSave();
+}
+
+function queueServerProgressSave() {
+  window.clearTimeout(state.serverSaveTimer);
+  state.serverSaveTimer = window.setTimeout(() => {
+    saveProgressToServer(state.progress);
+  }, 300);
+}
+
+async function saveProgressToServer(progress) {
+  if (state.serverSaveInFlight) {
+    state.serverSavePending = true;
+    return;
+  }
+
+  state.serverSaveInFlight = true;
+  try {
+    const response = await fetch("/api/progress", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ progress: normalizeProgress(progress) }),
+    });
+    if (response.status === 401) {
+      window.location.href = "/login";
+      return;
+    }
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  } catch (error) {
+    console.warn("Server progress could not be saved.", error);
+  } finally {
+    state.serverSaveInFlight = false;
+    if (state.serverSavePending) {
+      state.serverSavePending = false;
+      saveProgressToServer(state.progress);
+    }
+  }
 }
 
 async function fetchJson(url) {

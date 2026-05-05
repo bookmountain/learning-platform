@@ -2,16 +2,16 @@
 
 Private, lightweight learning platform for locally owned video courses and text tutorials.
 
-The app is intentionally a small skeleton: it scans a local `resources/` folder, builds a course/tutorial index, serves videos with captions, renders Markdown/tutorial documents, and tracks progress/playback preferences in the browser.
+The app is intentionally a small skeleton: it scans a local `resources/` folder, builds a course/tutorial index, serves videos with captions, renders Markdown/tutorial documents, and tracks progress/playback preferences in a local SQLite file.
 
 ## Stack
 
-- Runtime: Node.js 18+.
-- Server: built-in Node `http`, `fs`, `crypto`, and path utilities. No Express and no runtime npm dependencies.
+- Runtime: Node.js 22+.
+- Server: built-in Node `http`, `fs`, `crypto`, `sqlite`, and path utilities. No Express and no runtime npm dependencies.
 - Frontend: vanilla HTML, CSS, and ES modules in `public/`.
 - Video: native HTML `<video>` with local media and subtitle tracks.
 - Text tutorials: Markdown/HTML rendered in the browser.
-- Progress and playback preferences: browser `localStorage`.
+- Progress and playback preferences: server-side SQLite, with browser `localStorage` as a fallback/cache.
 - Auth: username/password from environment variables, with in-memory HTTP-only cookie sessions.
 - Conversion tooling: optional Python script using Microsoft MarkItDown for one-time HTML-to-Markdown conversion.
 
@@ -28,6 +28,8 @@ resources/
 ```
 
 `resources/` is ignored by Git on purpose. Keep course videos, captions, PDFs, zips, and paid/downloaded material out of the repository.
+
+`data/` is also ignored by Git. It stores `progress.sqlite3`, the single-user progress database.
 
 The server scans `resources/` when the library API is loaded, so adding/removing course content does not require a database. If you change code, restart the Node/Docker process; if you only add files under `resources/`, refresh the page.
 
@@ -133,17 +135,30 @@ If HTTPS is terminated by Cloudflare or a reverse proxy, also set:
 COOKIE_SECURE=true
 ```
 
-## How Login Works Without a Database
+## Progress Sync
 
-There is no user table yet. The server compares the submitted username/password against `LEARN_USERNAME` and `LEARN_PASSWORD`.
+Progress is stored server-side in SQLite at:
+
+```text
+data/progress.sqlite3
+```
+
+SQLite is an embedded file database, so this does not require a separate database server or container. The Node app still needs to run because it serves the private files, login, and progress API.
+
+This syncs completed lessons, playback positions, playback speed/volume, and the current course across your devices after login. The browser still keeps a local fallback copy; if the server database is empty, the first device migrates its local progress into SQLite.
+
+For Docker, keep `data/` as a writable bind mount so progress survives image rebuilds and container replacement.
+
+## How Login Works
+
+There is no user table. The server compares the submitted username/password against `LEARN_USERNAME` and `LEARN_PASSWORD`.
 
 On successful login, it creates a random session ID, stores that session in memory, and sends the browser an HTTP-only cookie. This is fine for a private single-user app, but it means:
 
 - sessions are cleared when the Node process/container restarts;
-- progress and playback preferences live in each browser's `localStorage`;
 - there is no multi-user account management.
 
-If this becomes multi-user, the next step is to use Postgres for hashed passwords, server-side progress, and notes.
+If this becomes multi-user, the next step is to use hashed passwords and per-user progress rows.
 
 ## Convert HTML Tutorials to Markdown
 
@@ -170,7 +185,7 @@ Example:
 ```sh
 git clone https://github.com/bookmountain/learning-platform.git
 cd learning-platform
-mkdir -p resources/courses resources/tutorials
+mkdir -p resources/courses resources/tutorials data
 ```
 
 Copy your course/tutorial folders into `resources/`, then create an uncommitted `.env`:
@@ -189,6 +204,7 @@ docker compose -f docker-compose.example.yml --env-file .env up -d --build
 ```
 
 The compose file binds the app to `127.0.0.1:5177`, which is safer when Cloudflare Tunnel or a local reverse proxy is the public entry point.
+It also mounts `./data:/app/data` so `progress.sqlite3` survives rebuilds.
 
 Cloudflare Tunnel public hostname target:
 
