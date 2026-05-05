@@ -669,6 +669,7 @@ async function serveFile(req, res, root, requestedPath, options) {
   const ext = path.extname(absolutePath).toLowerCase();
   const headers = {
     "Accept-Ranges": "bytes",
+    "Cache-Control": "private, no-store",
     "Content-Type": mimeTypes.get(ext) || "application/octet-stream",
   };
 
@@ -805,6 +806,7 @@ async function resourceEntriesForDirectory(relativeDir, zipFolder) {
 async function sendZip(res, archiveName, entries) {
   const zipBuffer = await buildZip(entries);
   res.writeHead(200, {
+    "Cache-Control": "private, no-store",
     "Content-Type": "application/zip",
     "Content-Disposition": contentDisposition(archiveName),
     "Content-Length": zipBuffer.length,
