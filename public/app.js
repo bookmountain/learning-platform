@@ -1,5 +1,8 @@
 const storageKey = "learning-platform-progress-v2";
 const layoutKey = "learning-platform-layout-v1";
+const seekStepSeconds = 3;
+const spaceBoostRate = 2;
+const temporaryRateChanges = new WeakMap();
 const state = {
   library: null,
   activeItem: null,
@@ -17,6 +20,7 @@ const state = {
   autoPlayCurrentVideo: false,
   advanceTimer: null,
   advanceRemaining: 0,
+  playbackBoost: null,
 };
 
 const els = {
@@ -43,6 +47,8 @@ const els = {
   overallCount: document.querySelector("#overallCount"),
   overallBar: document.querySelector("#overallBar"),
   viewer: document.querySelector("#viewer"),
+  playbackControls: document.querySelector("#playbackControls"),
+  playbackRate: document.querySelector("#playbackRate"),
   lessonMeta: document.querySelector("#lessonMeta"),
   lessonTitle: document.querySelector("#lessonTitle"),
   prevLesson: document.querySelector("#prevLesson"),
@@ -88,6 +94,7 @@ function bindEvents() {
   els.prevLesson.addEventListener("click", () => moveLesson(-1, { autoplay: true }));
   els.nextLesson.addEventListener("click", () => moveLesson(1, { autoplay: true }));
   els.wideMode.addEventListener("click", () => setWideVideo(!state.wideVideo));
+  els.playbackRate.addEventListener("change", () => setPersistentPlaybackRate(els.playbackRate.value));
   els.tutorialPrev.addEventListener("click", () => moveLesson(-1));
   els.tutorialNext.addEventListener("click", () => moveLesson(1));
   els.tutorialComplete.addEventListener("click", () => {
@@ -118,6 +125,8 @@ function bindEvents() {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeCategoryMenus();
   });
+  document.addEventListener("keydown", handleMediaShortcutKeydown, true);
+  document.addEventListener("keyup", handleMediaShortcutKeyup, true);
 }
 
 function selectItem(itemId, preferredLessonId = null) {
@@ -197,7 +206,7 @@ function renderEmptyLibrary() {
   state.activeItem = null;
   state.lessons = [];
   state.currentId = null;
-  document.body.classList.remove("tutorial-mode", "wide-video-mode");
+  document.body.classList.remove("tutorial-mode", "wide-video-mode", "video-lesson-mode", "document-lesson-mode");
   document.body.classList.add("course-mode");
   els.courseMain.hidden = false;
   els.tutorialMain.hidden = true;
@@ -389,6 +398,10 @@ function progressTargetLesson() {
 }
 
 function renderLesson(lesson) {
+  const isCourseLesson = lesson.item.type !== "tutorial";
+  document.body.classList.toggle("video-lesson-mode", isCourseLesson && Boolean(lesson.video));
+  document.body.classList.toggle("document-lesson-mode", isCourseLesson && !lesson.video);
+
   if (lesson.item.type === "tutorial") {
     renderTutorialLesson(lesson);
     return;
@@ -440,9 +453,11 @@ async function renderTutorialLesson(lesson) {
 }
 
 function renderViewer(lesson) {
+  endPlaybackBoost({ restore: false });
   state.activeCueIndex = -1;
   els.viewer.innerHTML = "";
   els.viewer.className = "viewer";
+  setPlaybackControlsVisible(Boolean(lesson.video));
 
   if (lesson.video) {
     const video = document.createElement("video");
@@ -475,7 +490,10 @@ function renderViewer(lesson) {
     video.addEventListener("loadedmetadata", handleLoadedMetadata);
 
     video.addEventListener("ratechange", () => {
-      state.progress.playback.rate = normalizePlaybackRate(video.playbackRate);
+      const rate = normalizePlaybackRate(video.playbackRate);
+      updatePlaybackRateControl(rate);
+      if (shouldSuppressTemporaryRateChange(video, rate) || state.playbackBoost?.video === video) return;
+      state.progress.playback.rate = rate;
       saveProgress();
     });
 
@@ -516,13 +534,14 @@ function renderViewer(lesson) {
     els.viewer.classList.add("document-viewer");
     const iframe = document.createElement("iframe");
     iframe.className = "article-frame";
-    iframe.src = lesson.article.articleUrl || lesson.article.mediaUrl;
     iframe.title = lesson.title;
     iframe.sandbox = "allow-same-origin allow-popups allow-popups-to-escape-sandbox";
     iframe.addEventListener("load", () => {
+      applyArticleFrameTheme(iframe);
       state.progress.positions[lesson.id] = 1;
       saveProgress();
     });
+    iframe.src = lesson.article.articleUrl || lesson.article.mediaUrl;
     els.viewer.append(iframe);
     return;
   }
@@ -566,6 +585,18 @@ function renderResourceLinks(resources, container) {
     download.textContent = "Download";
     item.append(download);
     container.append(item);
+  }
+}
+
+function applyArticleFrameTheme(iframe) {
+  try {
+    const doc = iframe.contentDocument;
+    if (!doc?.documentElement || !doc.body) return;
+    doc.documentElement.style.background = "#ffffff";
+    doc.body.style.background = "#ffffff";
+    doc.body.style.color = "#171a1f";
+  } catch {
+    // Cross-origin documents still keep the iframe element's white background.
   }
 }
 
@@ -634,11 +665,27 @@ function updateActiveCue(time) {
   }
 }
 
+function activeVideo() {
+  return els.viewer.querySelector("video");
+}
+
 function seekTo(seconds) {
-  const video = els.viewer.querySelector("video");
+  const video = activeVideo();
   if (!video) return;
   video.currentTime = seconds;
   video.play().catch(() => {});
+}
+
+function seekActiveVideoBy(seconds) {
+  const video = activeVideo();
+  if (!video || !Number.isFinite(video.currentTime)) return;
+
+  const maxTime = Number.isFinite(video.duration) ? video.duration : Number.POSITIVE_INFINITY;
+  const nextTime = clamp(video.currentTime + seconds, 0, maxTime);
+  video.currentTime = nextTime;
+  state.progress.positions[state.currentId] = nextTime;
+  throttledSave();
+  updateActiveCue(nextTime);
 }
 
 function playSelectedVideo(video) {
@@ -649,6 +696,108 @@ function playSelectedVideo(video) {
   video.play().catch(() => {
     // Browser autoplay rules can still block playback outside a direct click.
   });
+}
+
+function handleMediaShortcutKeydown(event) {
+  if (shouldIgnoreMediaShortcut(event) || event.altKey || event.ctrlKey || event.metaKey) return;
+
+  const video = activeVideo();
+  if (!video) return;
+
+  if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+    event.preventDefault();
+    event.stopPropagation();
+    seekActiveVideoBy(event.key === "ArrowRight" ? seekStepSeconds : -seekStepSeconds);
+    return;
+  }
+
+  if (isSpaceKey(event)) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.repeat) beginPlaybackBoost(video);
+  }
+}
+
+function handleMediaShortcutKeyup(event) {
+  if (!isSpaceKey(event) || shouldIgnoreMediaShortcut(event)) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+  endPlaybackBoost();
+}
+
+function shouldIgnoreMediaShortcut(event) {
+  const target = event.target;
+  if (!(target instanceof Element)) return false;
+  return Boolean(target.closest("input, textarea, select, button, [contenteditable='true']"));
+}
+
+function isSpaceKey(event) {
+  return event.code === "Space" || event.key === " " || event.key === "Spacebar";
+}
+
+function beginPlaybackBoost(video) {
+  if (state.playbackBoost?.video === video) return;
+
+  state.playbackBoost = {
+    video,
+    previousRate: normalizePlaybackRate(video.playbackRate),
+  };
+  setTemporaryPlaybackRate(video, spaceBoostRate);
+  updatePlaybackRateControl(spaceBoostRate);
+  video.play().catch(() => {});
+}
+
+function endPlaybackBoost(options = {}) {
+  const boost = state.playbackBoost;
+  if (!boost) return;
+
+  state.playbackBoost = null;
+  if (options.restore === false || !boost.video.isConnected) return;
+
+  boost.video.playbackRate = boost.previousRate;
+  updatePlaybackRateControl(boost.previousRate);
+}
+
+function setTemporaryPlaybackRate(video, rate) {
+  const normalizedRate = normalizePlaybackRate(rate);
+  temporaryRateChanges.set(video, normalizedRate);
+  video.playbackRate = normalizedRate;
+}
+
+function shouldSuppressTemporaryRateChange(video, rate) {
+  if (!temporaryRateChanges.has(video)) return false;
+
+  const temporaryRate = temporaryRateChanges.get(video);
+  temporaryRateChanges.delete(video);
+  return Math.abs(rate - temporaryRate) < 0.001;
+}
+
+function setPersistentPlaybackRate(value) {
+  const rate = normalizePlaybackRate(value);
+  const video = activeVideo();
+
+  endPlaybackBoost({ restore: false });
+  state.progress.playback.rate = rate;
+  if (video) {
+    video.defaultPlaybackRate = rate;
+    video.playbackRate = rate;
+  }
+  updatePlaybackRateControl(rate);
+  saveProgress();
+}
+
+function setPlaybackControlsVisible(visible) {
+  els.playbackControls.hidden = !visible;
+  if (visible) updatePlaybackRateControl(activeVideo()?.playbackRate ?? state.progress.playback.rate);
+}
+
+function updatePlaybackRateControl(rate) {
+  const normalizedRate = normalizePlaybackRate(rate);
+  const option = Array.from(els.playbackRate.options).find(
+    (candidate) => Number(candidate.value) === normalizedRate
+  );
+  if (option) els.playbackRate.value = option.value;
 }
 
 function startAdvanceCountdown() {

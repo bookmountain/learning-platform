@@ -67,6 +67,24 @@
         <section class="viewer-area" aria-label="Current lesson">
           <div class="viewer-shell">
             <button id="wideMode" class="viewer-toggle" type="button" aria-pressed="false">Wide view</button>
+            <div id="playbackControls" class="playback-controls" hidden>
+              <label class="speed-control">
+                <span>Speed</span>
+                <select id="playbackRate" aria-label="Playback speed">
+                  <option value="0.5">0.5x</option>
+                  <option value="0.75">0.75x</option>
+                  <option value="1">1x</option>
+                  <option value="1.25">1.25x</option>
+                  <option value="1.5">1.5x</option>
+                  <option value="1.75">1.75x</option>
+                  <option value="2">2x</option>
+                  <option value="2.5">2.5x</option>
+                  <option value="3">3x</option>
+                  <option value="4">4x</option>
+                </select>
+              </label>
+              <span class="shortcut-hint">Hold Space: 2x</span>
+            </div>
             <div id="viewer" class="viewer loading">Loading library...</div>
           </div>
 
