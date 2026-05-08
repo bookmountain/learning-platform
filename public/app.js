@@ -1,5 +1,6 @@
 const storageKey = "learning-platform-progress-v2";
 const layoutKey = "learning-platform-layout-v1";
+const themeKey = "learning-platform-theme-v1";
 const seekStepSeconds = 3;
 const spaceBoostRate = 2;
 const temporaryRateChanges = new WeakMap();
@@ -9,6 +10,7 @@ const state = {
   lessons: [],
   currentId: null,
   progress: loadLocalProgress(),
+  theme: initialTheme(),
   wideVideo: localStorage.getItem(layoutKey) === "wide-video",
   transcript: [],
   activeCueIndex: -1,
@@ -59,9 +61,11 @@ const els = {
   supportTitle: document.querySelector("#supportTitle"),
   transcriptList: document.querySelector("#transcriptList"),
   transcriptSearch: document.querySelector("#transcriptSearch"),
+  themeToggle: document.querySelector("#themeToggle"),
   logoutButton: document.querySelector("#logoutButton"),
 };
 
+applyTheme(state.theme);
 init();
 
 async function init() {
@@ -95,6 +99,7 @@ function bindEvents() {
   els.nextLesson.addEventListener("click", () => moveLesson(1, { autoplay: true }));
   els.wideMode.addEventListener("click", () => setWideVideo(!state.wideVideo));
   els.playbackRate.addEventListener("change", () => setPersistentPlaybackRate(els.playbackRate.value));
+  els.themeToggle.addEventListener("click", () => toggleTheme());
   els.tutorialPrev.addEventListener("click", () => moveLesson(-1));
   els.tutorialNext.addEventListener("click", () => moveLesson(1));
   els.tutorialComplete.addEventListener("click", () => {
@@ -230,6 +235,43 @@ function renderEmptyLibrary() {
 function closeCategoryMenus() {
   els.courseMenu.open = false;
   els.tutorialMenu.open = false;
+}
+
+function initialTheme() {
+  try {
+    const stored = localStorage.getItem(themeKey);
+    if (stored === "dark" || stored === "light") return stored;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  } catch {
+    return "light";
+  }
+}
+
+function toggleTheme() {
+  applyTheme(state.theme === "dark" ? "light" : "dark", { persist: true });
+}
+
+function applyTheme(theme, options = {}) {
+  state.theme = theme === "dark" ? "dark" : "light";
+  document.documentElement.dataset.theme = state.theme;
+  document.documentElement.style.colorScheme = state.theme;
+  if (options.persist) {
+    try {
+      localStorage.setItem(themeKey, state.theme);
+    } catch {
+      // The visual theme still changes even if storage is unavailable.
+    }
+  }
+  updateThemeToggle();
+  applyArticleFrameTheme(els.viewer?.querySelector(".article-frame"));
+}
+
+function updateThemeToggle() {
+  if (!els.themeToggle) return;
+  const isDark = state.theme === "dark";
+  els.themeToggle.textContent = isDark ? "Light theme" : "Dark theme";
+  els.themeToggle.setAttribute("aria-pressed", String(isDark));
+  els.themeToggle.title = isDark ? "Switch to light theme" : "Switch to dark theme";
 }
 
 function renderItemHeader() {
@@ -589,14 +631,20 @@ function renderResourceLinks(resources, container) {
 }
 
 function applyArticleFrameTheme(iframe) {
+  if (!iframe) return;
+
   try {
     const doc = iframe.contentDocument;
     if (!doc?.documentElement || !doc.body) return;
-    doc.documentElement.style.background = "#ffffff";
-    doc.body.style.background = "#ffffff";
-    doc.body.style.color = "#171a1f";
+    const styles = getComputedStyle(document.documentElement);
+    const background = styles.getPropertyValue("--article-surface").trim() || "#ffffff";
+    const color = styles.getPropertyValue("--article-ink").trim() || "#171a1f";
+    doc.documentElement.style.colorScheme = state.theme;
+    doc.documentElement.style.background = background;
+    doc.body.style.background = background;
+    doc.body.style.color = color;
   } catch {
-    // Cross-origin documents still keep the iframe element's white background.
+    // Cross-origin documents still keep the iframe element's themed background.
   }
 }
 
