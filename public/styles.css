@@ -711,7 +711,9 @@ textarea:focus {
 .tutorial-reader {
   margin: 0 auto;
   max-width: 980px;
+  min-width: 0;
   min-height: calc(100vh - 64px);
+  width: min(980px, 100%);
 }
 
 .tutorial-reader-header {
@@ -752,7 +754,15 @@ textarea:focus {
   color: var(--ink);
   font-size: 17px;
   line-height: 1.72;
+  min-width: 0;
+  overflow-wrap: anywhere;
   padding: 38px 40px 70px;
+  word-break: break-word;
+}
+
+.tutorial-content a {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .tutorial-content h1,
@@ -801,7 +811,9 @@ textarea:focus {
   border: 1px solid var(--code-border);
   border-radius: 6px;
   font-size: 0.9em;
+  overflow-wrap: anywhere;
   padding: 0.1rem 0.3rem;
+  white-space: normal;
 }
 
 .tutorial-content pre {
@@ -809,6 +821,7 @@ textarea:focus {
   border-radius: 8px;
   color: var(--code-block-ink);
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 16px;
 }
 
@@ -816,7 +829,24 @@ textarea:focus {
   background: transparent;
   border: 0;
   color: inherit;
+  overflow-wrap: normal;
   padding: 0;
+  white-space: pre;
+}
+
+.tutorial-content table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  width: max-content;
+}
+
+.tutorial-content iframe,
+.tutorial-content video,
+.tutorial-content embed,
+.tutorial-content object {
+  max-width: 100%;
 }
 
 .tutorial-content figure {
