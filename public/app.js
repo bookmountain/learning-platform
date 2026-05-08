@@ -519,12 +519,14 @@ function renderViewer(lesson) {
       track.label = "English";
       track.srclang = "en";
       track.src = captionUrl(lesson.caption.path);
-      track.default = true;
+      track.default = captionsEnabled();
       video.append(track);
+      track.addEventListener("load", () => applyCaptionPreference(video));
     }
 
     const handleLoadedMetadata = () => {
       applyPlaybackPreferences(video);
+      applyCaptionPreference(video);
       const savedTime = state.progress.positions[lesson.id] || 0;
       if (savedTime > 3 && savedTime < video.duration - 8) video.currentTime = savedTime;
       if (Number.isFinite(video.duration)) {
@@ -643,10 +645,37 @@ function applyArticleFrameTheme(iframe) {
     const styles = getComputedStyle(document.documentElement);
     const background = styles.getPropertyValue("--article-surface").trim() || "#ffffff";
     const color = styles.getPropertyValue("--article-ink").trim() || "#171a1f";
+    const codeBackground = styles.getPropertyValue("--code-surface").trim() || "#f5f7f9";
+    const codeColor = styles.getPropertyValue("--code-ink").trim() || "#171a1f";
+    const codeBorder = styles.getPropertyValue("--code-border").trim() || "#d8dee6";
+    const codeBlockBackground = styles.getPropertyValue("--code-block-surface").trim() || "#111827";
+    const codeBlockColor = styles.getPropertyValue("--code-block-ink").trim() || "#eef2f7";
     doc.documentElement.style.colorScheme = state.theme;
     doc.documentElement.style.background = background;
     doc.body.style.background = background;
     doc.body.style.color = color;
+    let themeStyle = doc.querySelector("#learning-platform-article-theme");
+    if (!themeStyle) {
+      themeStyle = doc.createElement("style");
+      themeStyle.id = "learning-platform-article-theme";
+      (doc.head || doc.documentElement).append(themeStyle);
+    }
+    themeStyle.textContent = `
+      code {
+        background: ${codeBackground} !important;
+        border-color: ${codeBorder} !important;
+        color: ${codeColor} !important;
+      }
+      pre {
+        background: ${codeBlockBackground} !important;
+        color: ${codeBlockColor} !important;
+      }
+      pre code {
+        background: transparent !important;
+        border-color: transparent !important;
+        color: inherit !important;
+      }
+    `;
   } catch {
     // Cross-origin documents still keep the iframe element's themed background.
   }
@@ -759,6 +788,33 @@ function toggleSelectedVideo(video) {
   video.pause();
 }
 
+function captionsEnabled() {
+  return state.progress.playback?.captions !== false;
+}
+
+function captionTracks(video) {
+  return Array.from(video.textTracks || []).filter((track) => ["captions", "subtitles"].includes(track.kind));
+}
+
+function applyCaptionPreference(video) {
+  const tracks = captionTracks(video);
+  if (!tracks.length) return;
+
+  const showCaptions = captionsEnabled();
+  tracks.forEach((track, index) => {
+    track.mode = showCaptions && index === 0 ? "showing" : "disabled";
+  });
+}
+
+function toggleCaptions(video) {
+  const tracks = captionTracks(video);
+  if (!tracks.length) return;
+
+  state.progress.playback.captions = !captionsEnabled();
+  applyCaptionPreference(video);
+  saveProgress();
+}
+
 function handleMediaShortcutKeydown(event) {
   if (shouldIgnoreMediaShortcut(event) || event.altKey || event.ctrlKey || event.metaKey) return;
 
@@ -769,6 +825,13 @@ function handleMediaShortcutKeydown(event) {
     event.preventDefault();
     event.stopPropagation();
     seekActiveVideoBy(event.key === "ArrowRight" ? seekStepSeconds : -seekStepSeconds);
+    return;
+  }
+
+  if (isCaptionKey(event)) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.repeat) toggleCaptions(video);
     return;
   }
 
@@ -795,6 +858,10 @@ function shouldIgnoreMediaShortcut(event) {
 
 function isSpaceKey(event) {
   return event.code === "Space" || event.key === " " || event.key === "Spacebar";
+}
+
+function isCaptionKey(event) {
+  return event.key?.toLowerCase() === "c";
 }
 
 function beginSpacePress(video) {
@@ -1014,6 +1081,7 @@ function defaultProgress() {
       rate: 1,
       volume: 1,
       muted: false,
+      captions: true,
     },
     lastItemId: null,
     lastLessonId: null,
@@ -1036,6 +1104,7 @@ function normalizeProgress(saved = {}) {
       rate: normalizePlaybackRate(saved.playback?.rate ?? defaults.playback.rate),
       volume: clamp(Number(saved.playback?.volume ?? defaults.playback.volume), 0, 1),
       muted: Boolean(saved.playback?.muted ?? defaults.playback.muted),
+      captions: saved.playback?.captions !== false,
     },
     lastLessonByItem: saved.lastLessonByItem || defaults.lastLessonByItem,
   };
@@ -1047,6 +1116,7 @@ function applyPlaybackPreferences(video) {
   video.playbackRate = normalizePlaybackRate(preferences.rate);
   video.volume = clamp(Number(preferences.volume ?? 1), 0, 1);
   video.muted = Boolean(preferences.muted);
+  applyCaptionPreference(video);
 }
 
 function normalizePlaybackRate(value) {

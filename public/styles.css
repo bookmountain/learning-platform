@@ -17,6 +17,7 @@
   --article-surface: #ffffff;
   --article-ink: #171a1f;
   --code-surface: #f5f7f9;
+  --code-ink: #171a1f;
   --code-border: #d8dee6;
   --code-block-surface: #111827;
   --code-block-ink: #eef2f7;
@@ -57,7 +58,8 @@
   --status-border: #6d7a8a;
   --article-surface: #101720;
   --article-ink: #edf2f7;
-  --code-surface: #17212c;
+  --code-surface: #1e293b;
+  --code-ink: #f8fafc;
   --code-border: #324154;
   --code-block-surface: #05080d;
   --code-block-ink: #eef2f7;
@@ -810,6 +812,7 @@ textarea:focus {
   background: var(--code-surface);
   border: 1px solid var(--code-border);
   border-radius: 6px;
+  color: var(--code-ink);
   font-size: 0.9em;
   overflow-wrap: anywhere;
   padding: 0.1rem 0.3rem;
