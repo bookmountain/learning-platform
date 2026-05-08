@@ -1,7 +1,8 @@
 const storageKey = "learning-platform-progress-v2";
 const layoutKey = "learning-platform-layout-v1";
 const themeKey = "learning-platform-theme-v1";
-const seekStepSeconds = 3;
+const seekStepSeconds = 5;
+const spaceBoostDelayMs = 1000;
 const spaceBoostRate = 2;
 const temporaryRateChanges = new WeakMap();
 const state = {
@@ -23,6 +24,7 @@ const state = {
   advanceTimer: null,
   advanceRemaining: 0,
   playbackBoost: null,
+  spacePress: null,
 };
 
 const els = {
@@ -496,6 +498,7 @@ async function renderTutorialLesson(lesson) {
 }
 
 function renderViewer(lesson) {
+  clearPendingSpacePress();
   endPlaybackBoost({ restore: false });
   state.activeCueIndex = -1;
   els.viewer.innerHTML = "";
@@ -747,6 +750,15 @@ function playSelectedVideo(video) {
   });
 }
 
+function toggleSelectedVideo(video) {
+  if (video.paused) {
+    playSelectedVideo(video);
+    return;
+  }
+
+  video.pause();
+}
+
 function handleMediaShortcutKeydown(event) {
   if (shouldIgnoreMediaShortcut(event) || event.altKey || event.ctrlKey || event.metaKey) return;
 
@@ -763,7 +775,7 @@ function handleMediaShortcutKeydown(event) {
   if (isSpaceKey(event)) {
     event.preventDefault();
     event.stopPropagation();
-    if (!event.repeat) beginPlaybackBoost(video);
+    if (!event.repeat) beginSpacePress(video);
   }
 }
 
@@ -772,7 +784,7 @@ function handleMediaShortcutKeyup(event) {
 
   event.preventDefault();
   event.stopPropagation();
-  endPlaybackBoost();
+  finishSpacePress();
 }
 
 function shouldIgnoreMediaShortcut(event) {
@@ -783,6 +795,41 @@ function shouldIgnoreMediaShortcut(event) {
 
 function isSpaceKey(event) {
   return event.code === "Space" || event.key === " " || event.key === "Spacebar";
+}
+
+function beginSpacePress(video) {
+  clearPendingSpacePress();
+  state.spacePress = {
+    video,
+    boosted: false,
+    timer: window.setTimeout(() => {
+      if (!state.spacePress || state.spacePress.video !== video) return;
+      state.spacePress.boosted = true;
+      beginPlaybackBoost(video);
+    }, spaceBoostDelayMs),
+  };
+}
+
+function finishSpacePress() {
+  const press = state.spacePress;
+  if (!press) {
+    endPlaybackBoost();
+    return;
+  }
+
+  clearPendingSpacePress();
+  if (press.boosted || state.playbackBoost?.video === press.video) {
+    endPlaybackBoost();
+    return;
+  }
+
+  toggleSelectedVideo(press.video);
+}
+
+function clearPendingSpacePress() {
+  if (!state.spacePress) return;
+  window.clearTimeout(state.spacePress.timer);
+  state.spacePress = null;
 }
 
 function beginPlaybackBoost(video) {
