@@ -269,9 +269,10 @@ function applyTheme(theme, options = {}) {
 function updateThemeToggle() {
   if (!els.themeToggle) return;
   const isDark = state.theme === "dark";
-  els.themeToggle.textContent = isDark ? "Light theme" : "Dark theme";
   els.themeToggle.setAttribute("aria-pressed", String(isDark));
-  els.themeToggle.title = isDark ? "Switch to light theme" : "Switch to dark theme";
+  const label = isDark ? "Switch to light theme" : "Switch to dark theme";
+  els.themeToggle.setAttribute("aria-label", label);
+  els.themeToggle.title = label;
 }
 
 function renderItemHeader() {

@@ -302,10 +302,39 @@ p {
   color: var(--muted);
 }
 
+.theme-toggle {
+  color: var(--accent-strong);
+  flex: 0 0 auto;
+  min-width: 38px;
+  padding: 0;
+}
+
+.theme-icon {
+  fill: none;
+  height: 18px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  width: 18px;
+}
+
+.theme-icon-sun {
+  display: none;
+}
+
 .theme-toggle[aria-pressed="true"] {
   background: var(--soft-2);
   border-color: var(--active-border);
   color: var(--accent-strong);
+}
+
+.theme-toggle[aria-pressed="true"] .theme-icon-moon {
+  display: none;
+}
+
+.theme-toggle[aria-pressed="true"] .theme-icon-sun {
+  display: block;
 }
 
 .ghost-button:hover,
