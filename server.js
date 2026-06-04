@@ -643,7 +643,7 @@ function chooseCaption(video, captions) {
 
 async function servePublic(req, res, pathname) {
   const relPath = pathname === "/" ? "index.html" : pathname.slice(1);
-  if (!["index.html", "app.js", "styles.css"].includes(relPath)) return false;
+  if (!["index.html", "app.js", "progress.js", "styles.css", "time.js"].includes(relPath)) return false;
   await serveFile(req, res, publicRoot, relPath, { download: false });
   return true;
 }

@@ -1,9 +1,15 @@
+import { applyLessonCompletion } from "./progress.js";
+import { formatDuration, formatTime } from "./time.js";
+
 const storageKey = "learning-platform-progress-v2";
 const layoutKey = "learning-platform-layout-v1";
 const themeKey = "learning-platform-theme-v1";
 const seekStepSeconds = 5;
 const spaceBoostDelayMs = 1000;
 const spaceBoostRate = 2;
+const durationProbeConcurrency = 2;
+const durationProbeDelayMs = 80;
+const durationProbeTimeoutMs = 12000;
 const temporaryRateChanges = new WeakMap();
 const state = {
   library: null,
@@ -25,6 +31,9 @@ const state = {
   advanceRemaining: 0,
   playbackBoost: null,
   spacePress: null,
+  durationProbeQueue: [],
+  durationProbeQueued: new Set(),
+  durationProbeActive: 0,
 };
 
 const els = {
@@ -154,6 +163,7 @@ function selectItem(itemId, preferredLessonId = null) {
   renderProgress();
   renderSidebar();
   selectLesson(progressLesson?.id, { scrollFromTop: true });
+  queueVideoDurationsForLessons(state.lessons, { skipLessonId: progressLesson?.id });
 }
 
 function selectLesson(lessonId, options = {}) {
@@ -364,6 +374,7 @@ function renderSectionList(container, options = {}) {
     list.className = "lesson-list";
     const lessonsToRender = query && !sectionMatches ? matchingLessons : section.lectures;
     for (const lesson of lessonsToRender) {
+      const durationLabel = lesson.video ? formatDuration(lessonDuration(lesson)) : "";
       const button = document.createElement("button");
       button.type = "button";
       button.dataset.lessonId = lesson.id;
@@ -378,7 +389,12 @@ function renderSectionList(container, options = {}) {
         <span class="lesson-status" aria-hidden="true"></span>
         <span class="lesson-copy">
           <span class="lesson-name">${String(lesson.number).padStart(3, "0")} ${escapeHtml(lesson.title)}</span>
-          <span class="lesson-kind">${lesson.type}${lesson.resourceCount ? ` / ${lesson.resourceCount} resources` : ""}</span>
+          <span class="lesson-meta-line">
+            <span class="lesson-kind">${lesson.type}${lesson.resourceCount ? ` / ${lesson.resourceCount} resources` : ""}</span>
+            <span class="lesson-duration" data-duration-lesson-id="${escapeHtml(lesson.id)}"${
+              durationLabel ? "" : " hidden"
+            }>${durationLabel}</span>
+          </span>
         </span>
       `;
       button.addEventListener("click", () => {
@@ -424,6 +440,110 @@ function scrollActiveLessonInto(container) {
 
 function cssAttributeValue(value) {
   return String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function queueVideoDurationsForLessons(lessons, options = {}) {
+  for (const lesson of lessons) {
+    if (!lesson.video?.mediaUrl || lesson.id === options.skipLessonId) continue;
+    if (knownDuration(lesson.id) || state.durationProbeQueued.has(lesson.id)) continue;
+
+    state.durationProbeQueued.add(lesson.id);
+    state.durationProbeQueue.push({
+      lessonId: lesson.id,
+      mediaUrl: lesson.video.mediaUrl,
+    });
+  }
+
+  runDurationProbeQueue();
+}
+
+function runDurationProbeQueue() {
+  while (state.durationProbeActive < durationProbeConcurrency && state.durationProbeQueue.length) {
+    const task = state.durationProbeQueue.shift();
+    state.durationProbeActive += 1;
+
+    loadVideoMetadataDuration(task.mediaUrl)
+      .then((duration) => {
+        rememberLessonDuration(task.lessonId, duration, { save: "later" });
+      })
+      .finally(() => {
+        state.durationProbeActive -= 1;
+        window.setTimeout(runDurationProbeQueue, durationProbeDelayMs);
+      });
+  }
+}
+
+function loadVideoMetadataDuration(mediaUrl) {
+  return new Promise((resolve) => {
+    const video = document.createElement("video");
+    let settled = false;
+    let timeout = null;
+
+    const finish = (duration = null) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      video.removeEventListener("loadedmetadata", handleMetadata);
+      video.removeEventListener("error", handleError);
+      video.removeAttribute("src");
+      video.load();
+      resolve(duration);
+    };
+
+    const handleMetadata = () => finish(video.duration);
+    const handleError = () => finish(null);
+
+    timeout = window.setTimeout(() => finish(null), durationProbeTimeoutMs);
+    video.preload = "metadata";
+    video.muted = true;
+    video.addEventListener("loadedmetadata", handleMetadata);
+    video.addEventListener("error", handleError);
+    video.src = mediaUrl;
+    video.load();
+  });
+}
+
+function lessonDuration(lesson) {
+  return validDuration(state.progress.durations[lesson.id]) ?? validDuration(lesson.video?.duration);
+}
+
+function knownDuration(lessonId) {
+  return validDuration(state.progress.durations[lessonId]) !== null;
+}
+
+function rememberLessonDuration(lessonId, duration, options = {}) {
+  const nextDuration = validDuration(duration);
+  if (nextDuration === null) return false;
+
+  const currentDuration = validDuration(state.progress.durations[lessonId]);
+  if (currentDuration !== null && Math.abs(currentDuration - nextDuration) < 0.5) return false;
+
+  state.progress.durations[lessonId] = nextDuration;
+  updateLessonDurationInRenderedLists(lessonId);
+
+  if (options.save === "now") saveProgress();
+  else if (options.save !== false) throttledSave();
+
+  return true;
+}
+
+function updateLessonDurationInRenderedLists(lessonId) {
+  const lesson = state.lessons.find((candidate) => candidate.id === lessonId);
+  if (!lesson?.video) return;
+
+  const label = formatDuration(lessonDuration(lesson));
+  const selector = `.lesson-duration[data-duration-lesson-id="${cssAttributeValue(lessonId)}"]`;
+  for (const container of [els.sectionList, els.wideSectionList]) {
+    for (const node of container.querySelectorAll(selector)) {
+      node.textContent = label;
+      node.hidden = !label;
+    }
+  }
+}
+
+function validDuration(value) {
+  const duration = Number(value);
+  return Number.isFinite(duration) && duration > 0 ? duration : null;
 }
 
 function progressTargetLesson() {
@@ -529,10 +649,7 @@ function renderViewer(lesson) {
       applyCaptionPreference(video);
       const savedTime = state.progress.positions[lesson.id] || 0;
       if (savedTime > 3 && savedTime < video.duration - 8) video.currentTime = savedTime;
-      if (Number.isFinite(video.duration)) {
-        state.progress.durations[lesson.id] = video.duration;
-        saveProgress();
-      }
+      rememberLessonDuration(lesson.id, video.duration, { save: "now" });
       if (state.autoPlayCurrentVideo) playSelectedVideo(video);
     };
     video.addEventListener("loadedmetadata", handleLoadedMetadata);
@@ -555,7 +672,7 @@ function renderViewer(lesson) {
       if (!Number.isFinite(video.currentTime)) return;
       state.progress.positions[lesson.id] = video.currentTime;
       if (Number.isFinite(video.duration)) {
-        state.progress.durations[lesson.id] = video.duration;
+        rememberLessonDuration(lesson.id, video.duration, { save: "later" });
         if (video.duration > 0 && video.currentTime / video.duration >= 0.95) {
           setComplete(lesson.id, true, { quiet: true });
         }
@@ -1011,12 +1128,30 @@ function moveLesson(direction, options = {}) {
 }
 
 function setComplete(lessonId, complete, options = {}) {
-  if (complete) state.progress.completed[lessonId] = true;
-  else delete state.progress.completed[lessonId];
+  const changed = applyLessonCompletion(state.progress.completed, lessonId, complete);
+  if (!changed) return;
+
   saveProgress();
   renderProgress();
-  renderSidebar();
+  renderSidebarPreservingScroll();
   updateMarkButton();
+}
+
+function renderSidebarPreservingScroll() {
+  const positions = [
+    [els.sectionList, els.sectionList.scrollTop],
+    [els.wideSectionList, els.wideSectionList.scrollTop],
+  ];
+
+  renderSidebar();
+  restoreSidebarScroll(positions);
+  window.requestAnimationFrame(() => restoreSidebarScroll(positions));
+}
+
+function restoreSidebarScroll(positions) {
+  for (const [container, scrollTop] of positions) {
+    container.scrollTop = scrollTop;
+  }
 }
 
 function updateMarkButton() {
@@ -1193,16 +1328,6 @@ function encodePath(value) {
 
 function isOpenable(ext) {
   return [".html", ".htm", ".pdf", ".txt", ".sql", ".csv", ".json", ".md", ".markdown"].includes(ext);
-}
-
-function formatTime(totalSeconds) {
-  const seconds = Math.max(0, Math.floor(totalSeconds));
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const rest = seconds % 60;
-  return hours
-    ? `${hours}:${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`
-    : `${minutes}:${String(rest).padStart(2, "0")}`;
 }
 
 function escapeHtml(value) {
