@@ -9,6 +9,7 @@ WORKDIR /app
 
 COPY package.json ./
 COPY server.js ./
+COPY markdown-table.js ./
 COPY public ./public
 COPY scripts ./scripts
 COPY requirements.txt ./

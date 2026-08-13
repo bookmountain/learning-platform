@@ -228,3 +228,22 @@ http://127.0.0.1:5177
 ```
 
 For extra protection, put Cloudflare Access in front of the hostname too.
+
+### Update and rebuild on the VPS
+
+From the existing project folder, pull the latest code and let Compose rebuild and replace the app container:
+
+```sh
+cd /path/to/learning-platform
+git pull --ff-only
+docker compose -f docker-compose.example.yml --env-file .env up -d --build --remove-orphans
+```
+
+Then confirm the replacement container is healthy and inspect its recent startup output:
+
+```sh
+docker compose -f docker-compose.example.yml --env-file .env ps
+docker compose -f docker-compose.example.yml --env-file .env logs --tail=100 learning-platform
+```
+
+The mounted `resources/` library and `data/progress.sqlite3` file are not baked into the image, so they survive rebuilds. Login sessions are held in memory and are cleared when the container restarts, so sign in again after an update.

@@ -34,6 +34,9 @@ const state = {
   durationProbeQueue: [],
   durationProbeQueued: new Set(),
   durationProbeActive: 0,
+  tutorialRenderVersion: 0,
+  tutorialScrollSaveTimer: null,
+  tutorialScrollRestoring: false,
 };
 
 const els = {
@@ -143,9 +146,13 @@ function bindEvents() {
   });
   document.addEventListener("keydown", handleMediaShortcutKeydown, true);
   document.addEventListener("keyup", handleMediaShortcutKeyup, true);
+  els.tutorialMain.addEventListener("scroll", handleTutorialScroll, { passive: true });
+  window.addEventListener("scroll", handleTutorialScroll, { passive: true });
+  window.addEventListener("pagehide", flushProgressForPageExit);
 }
 
 function selectItem(itemId, preferredLessonId = null) {
+  rememberCurrentTutorialScroll();
   const item = state.library.items.find((candidate) => candidate.id === itemId);
   if (!item) return;
 
@@ -171,6 +178,7 @@ function selectLesson(lessonId, options = {}) {
   const lesson = state.lessons.find((candidate) => candidate.id === lessonId);
   if (!lesson) return;
 
+  rememberCurrentTutorialScroll();
   stopAdvanceCountdown();
   state.autoPlayCurrentVideo = Boolean(options.autoplay && lesson.video);
   state.currentId = lesson.id;
@@ -572,6 +580,8 @@ function renderLesson(lesson) {
     return;
   }
 
+  state.tutorialRenderVersion += 1;
+  state.tutorialScrollRestoring = false;
   renderCourseLesson(lesson);
 }
 
@@ -589,6 +599,8 @@ function renderCourseLesson(lesson) {
 }
 
 async function renderTutorialLesson(lesson) {
+  const renderVersion = ++state.tutorialRenderVersion;
+  state.tutorialScrollRestoring = true;
   const index = state.lessons.findIndex((candidate) => candidate.id === lesson.id);
   els.tutorialMeta.textContent = `${lesson.item.title} / chapter ${String(lesson.number).padStart(2, "0")}`;
   els.tutorialTitle.textContent = lesson.title;
@@ -607,14 +619,91 @@ async function renderTutorialLesson(lesson) {
     if (firstHeading && firstHeading.textContent.trim() === lesson.title.trim()) {
       firstHeading.remove();
     }
+    if (renderVersion !== state.tutorialRenderVersion || state.currentId !== lesson.id) return;
     els.tutorialContent.innerHTML = articleMain?.innerHTML || html;
-    els.tutorialMain.scrollTo({ top: 0, behavior: "auto" });
-    state.progress.positions[lesson.id] = 1;
-    saveProgress();
+    enhanceTutorialTables();
+    restoreTutorialScroll(lesson.id, renderVersion);
   } catch (error) {
+    if (renderVersion !== state.tutorialRenderVersion || state.currentId !== lesson.id) return;
     console.error(error);
     els.tutorialContent.innerHTML = `<p class="empty-state">This article could not be loaded.</p>`;
+    restoreTutorialScroll(lesson.id, renderVersion);
   }
+}
+
+function enhanceTutorialTables() {
+  const tables = [...els.tutorialContent.querySelectorAll("table")];
+  tables.forEach((table, index) => {
+    for (const header of table.querySelectorAll("thead th")) header.scope = "col";
+    let wrapper = table.parentElement;
+    if (!wrapper?.classList.contains("table-scroll")) {
+      wrapper = document.createElement("div");
+      wrapper.className = "table-scroll";
+      table.before(wrapper);
+      wrapper.append(table);
+    }
+    wrapper.tabIndex = 0;
+    wrapper.setAttribute("role", "region");
+    wrapper.setAttribute("aria-label", `Scrollable data table ${index + 1}`);
+  });
+}
+
+function handleTutorialScroll() {
+  if (state.tutorialScrollRestoring || state.activeItem?.type !== "tutorial") return;
+  window.clearTimeout(state.tutorialScrollSaveTimer);
+  state.tutorialScrollSaveTimer = window.setTimeout(() => {
+    rememberCurrentTutorialScroll();
+    saveProgress();
+  }, 180);
+}
+
+function rememberCurrentTutorialScroll() {
+  if (state.tutorialScrollRestoring || state.activeItem?.type !== "tutorial" || !state.currentId) return;
+  state.progress.tutorialScroll[state.currentId] = currentTutorialScrollTop();
+}
+
+function currentTutorialScrollTop() {
+  if (window.matchMedia("(max-width: 980px)").matches) {
+    const mainTop = els.tutorialMain.getBoundingClientRect().top + window.scrollY;
+    return Math.max(0, Math.round(window.scrollY - mainTop));
+  }
+  return Math.max(0, Math.round(els.tutorialMain.scrollTop));
+}
+
+function restoreTutorialScroll(lessonId, renderVersion) {
+  const savedTop = Math.max(0, Number(state.progress.tutorialScroll[lessonId]) || 0);
+  const applyPosition = () => {
+    if (renderVersion !== state.tutorialRenderVersion || state.currentId !== lessonId) return false;
+    if (window.matchMedia("(max-width: 980px)").matches) {
+      const mainTop = els.tutorialMain.getBoundingClientRect().top + window.scrollY;
+      window.scrollTo({ top: mainTop + savedTop, behavior: "auto" });
+    } else {
+      els.tutorialMain.scrollTo({ top: savedTop, behavior: "auto" });
+    }
+    return true;
+  };
+
+  applyPosition();
+  window.requestAnimationFrame(() => {
+    if (!applyPosition()) return;
+    window.requestAnimationFrame(() => {
+      if (renderVersion === state.tutorialRenderVersion && state.currentId === lessonId) {
+        state.tutorialScrollRestoring = false;
+      }
+    });
+  });
+}
+
+function flushProgressForPageExit() {
+  rememberCurrentTutorialScroll();
+  const progress = normalizeProgress(state.progress);
+  localStorage.setItem(storageKey, JSON.stringify(progress));
+  fetch("/api/progress", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ progress }),
+    keepalive: true,
+  }).catch(() => {});
 }
 
 function renderViewer(lesson) {
@@ -1210,6 +1299,7 @@ function defaultProgress() {
   return {
     completed: {},
     positions: {},
+    tutorialScroll: {},
     durations: {},
     notes: {},
     playback: {
@@ -1231,6 +1321,7 @@ function normalizeProgress(saved = {}) {
     ...saved,
     completed: saved.completed || defaults.completed,
     positions: saved.positions || defaults.positions,
+    tutorialScroll: saved.tutorialScroll || defaults.tutorialScroll,
     durations: saved.durations || defaults.durations,
     notes: saved.notes || defaults.notes,
     playback: {

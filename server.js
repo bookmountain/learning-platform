@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseMarkdownTable } from "./markdown-table.js";
 
 const appRoot = path.dirname(fileURLToPath(import.meta.url));
 const publicRoot = path.join(appRoot, "public");
@@ -1227,6 +1228,30 @@ function wrapMarkdownDocument(markdown, title, articleDir) {
         margin: 0 0 18px;
         padding: 6px 0 6px 16px;
       }
+      .table-scroll {
+        margin: 0 0 22px;
+        max-width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      table {
+        border-collapse: collapse;
+        min-width: 100%;
+        width: max-content;
+      }
+      th, td {
+        border: 1px solid #d8dee6;
+        padding: 10px 13px;
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        background: #f5f7f9;
+        font-weight: 700;
+      }
+      tbody tr:nth-child(even) {
+        background: #fbfcfd;
+      }
       @media (max-width: 680px) {
         main {
           padding: 28px 18px 48px;
@@ -1266,7 +1291,8 @@ function markdownToHtml(markdown, articleDir = "") {
     listType = null;
   };
 
-  for (const line of lines) {
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex];
     if (line.startsWith("```")) {
       if (inCode) {
         html.push(`<pre><code>${escapeHtml(code.join("\n"))}</code></pre>`);
@@ -1288,6 +1314,28 @@ function markdownToHtml(markdown, articleDir = "") {
     if (!line.trim()) {
       flushParagraph();
       closeList();
+      continue;
+    }
+
+    const table = parseMarkdownTable(lines, lineIndex);
+    if (table) {
+      flushParagraph();
+      closeList();
+      const headerCells = table.headers
+        .map((cell, index) => `<th scope="col" style="text-align: ${table.alignments[index]}">${inlineMarkdown(cell)}</th>`)
+        .join("");
+      const bodyRows = table.rows
+        .map(
+          (row) =>
+            `<tr>${row
+              .map((cell, index) => `<td style="text-align: ${table.alignments[index]}">${inlineMarkdown(cell)}</td>`)
+              .join("")}</tr>`
+        )
+        .join("");
+      html.push(
+        `<div class="table-scroll" role="region" aria-label="Scrollable data table" tabindex="0"><table><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table></div>`
+      );
+      lineIndex = table.nextIndex - 1;
       continue;
     }
 

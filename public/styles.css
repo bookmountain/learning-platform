@@ -853,12 +853,42 @@ textarea:focus {
   white-space: pre;
 }
 
-.tutorial-content table {
-  display: block;
+.tutorial-content .table-scroll {
+  margin: 0 0 22px;
   max-width: 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+.tutorial-content .table-scroll:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.tutorial-content table {
+  border-collapse: collapse;
+  min-width: 100%;
   width: max-content;
+}
+
+.tutorial-content th,
+.tutorial-content td {
+  border: 1px solid var(--line);
+  min-width: 120px;
+  overflow-wrap: normal;
+  padding: 10px 13px;
+  text-align: left;
+  vertical-align: top;
+  word-break: normal;
+}
+
+.tutorial-content th {
+  background: var(--soft);
+  font-weight: 700;
+}
+
+.tutorial-content tbody tr:nth-child(even) {
+  background: var(--sidebar-tutorial);
 }
 
 .tutorial-content iframe,
