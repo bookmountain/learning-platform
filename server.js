@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { inlineMarkdown } from "./markdown-inline.js";
 import { parseMarkdownTable } from "./markdown-table.js";
 
 const appRoot = path.dirname(fileURLToPath(import.meta.url));
@@ -1432,15 +1433,6 @@ function isExternalUrl(value) {
 
 function isMissingPathError(error) {
   return error?.code === "ENOENT" || error?.code === "ENOTDIR";
-}
-
-function inlineMarkdown(value) {
-  return escapeHtml(value)
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label, href) => {
-      return `<a href="${escapeHtml(href)}" target="_blank" rel="noreferrer">${label}</a>`;
-    });
 }
 
 function parseSrt(srt) {
