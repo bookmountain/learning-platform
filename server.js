@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseMarkdownImage } from "./markdown-image.js";
 import { inlineMarkdown } from "./markdown-inline.js";
 import { parseMarkdownTable } from "./markdown-table.js";
 
@@ -1340,17 +1341,18 @@ function markdownToHtml(markdown, articleDir = "") {
       continue;
     }
 
-    const image = line.match(/^!\[([^\]]*)\]\((.+)\)$/);
+    const image = parseMarkdownImage(lines, lineIndex);
     if (image) {
       flushParagraph();
       closeList();
-      const alt = image[1].trim();
-      const src = resolveArticleAssetUrl(markdownLinkTarget(image[2]), articleDir);
+      const alt = image.alt;
+      const src = resolveArticleAssetUrl(markdownLinkTarget(image.target), articleDir);
       html.push(
         `<figure><img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" loading="lazy" />${
           alt ? `<figcaption>${escapeHtml(alt)}</figcaption>` : ""
         }</figure>`
       );
+      lineIndex = image.nextIndex - 1;
       continue;
     }
 
