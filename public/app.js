@@ -11,6 +11,7 @@ const durationProbeConcurrency = 2;
 const durationProbeDelayMs = 80;
 const durationProbeTimeoutMs = 12000;
 const temporaryRateChanges = new WeakMap();
+const wideLayoutQuery = window.matchMedia("(min-width: 981px)");
 const state = {
   library: null,
   activeItem: null,
@@ -69,6 +70,8 @@ const els = {
   lessonTitle: document.querySelector("#lessonTitle"),
   prevLesson: document.querySelector("#prevLesson"),
   wideMode: document.querySelector("#wideMode"),
+  fullscreenButton: document.querySelector("#fullscreenButton"),
+  topbar: document.querySelector(".topbar"),
   nextLesson: document.querySelector("#nextLesson"),
   markComplete: document.querySelector("#markComplete"),
   resourceStrip: document.querySelector("#resourceStrip"),
@@ -80,7 +83,16 @@ const els = {
 };
 
 applyTheme(state.theme);
+trackTopbarHeight();
 init();
+
+function trackTopbarHeight() {
+  const update = () =>
+    document.documentElement.style.setProperty("--topbar-height", `${Math.ceil(els.topbar.getBoundingClientRect().height)}px`);
+  update();
+  if ("ResizeObserver" in window) new ResizeObserver(update).observe(els.topbar);
+  else window.addEventListener("resize", update);
+}
 
 async function init() {
   try {
@@ -112,6 +124,8 @@ function bindEvents() {
   els.prevLesson.addEventListener("click", () => moveLesson(-1, { autoplay: true }));
   els.nextLesson.addEventListener("click", () => moveLesson(1, { autoplay: true }));
   els.wideMode.addEventListener("click", () => setWideVideo(!state.wideVideo));
+  wideLayoutQuery.addEventListener("change", () => applyWideVideo());
+  els.fullscreenButton.addEventListener("click", () => enterVideoFullscreen());
   els.playbackRate.addEventListener("change", () => setPersistentPlaybackRate(els.playbackRate.value));
   els.themeToggle.addEventListener("click", () => toggleTheme());
   els.tutorialPrev.addEventListener("click", () => moveLesson(-1));
@@ -316,7 +330,8 @@ function setWideVideo(enabled) {
 }
 
 function applyWideVideo() {
-  const activeForCourse = state.wideVideo && state.activeItem?.type !== "tutorial";
+  // Wide view only re-arranges the desktop two-column layout; small screens are already single-column.
+  const activeForCourse = state.wideVideo && wideLayoutQuery.matches && state.activeItem?.type !== "tutorial";
   document.body.classList.toggle("wide-video-mode", activeForCourse);
   els.wideMode.textContent = activeForCourse ? "Standard view" : "Wide view";
   els.wideMode.setAttribute("aria-pressed", String(activeForCourse));
@@ -954,6 +969,28 @@ function updateActiveCue(time) {
 
 function activeVideo() {
   return els.viewer.querySelector("video");
+}
+
+async function enterVideoFullscreen() {
+  const video = activeVideo();
+  if (!video) return;
+  try {
+    if (video.requestFullscreen) {
+      await video.requestFullscreen();
+    } else if (video.webkitEnterFullscreen) {
+      // iPhone has no element Fullscreen API; only the native video player can go fullscreen.
+      video.webkitEnterFullscreen();
+      return;
+    } else if (video.webkitRequestFullscreen) {
+      video.webkitRequestFullscreen();
+    } else {
+      return;
+    }
+    await screen.orientation?.lock?.("landscape").catch(() => {});
+  } catch (error) {
+    if (video.webkitEnterFullscreen) video.webkitEnterFullscreen();
+    else console.error(error);
+  }
 }
 
 function seekTo(seconds) {

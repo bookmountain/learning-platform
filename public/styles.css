@@ -991,6 +991,31 @@ textarea:focus {
   z-index: 3;
 }
 
+.fullscreen-button {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 6px;
+  color: white;
+  cursor: pointer;
+  display: none;
+  font-size: 13px;
+  font-weight: 800;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 12px;
+}
+
+.fullscreen-button svg {
+  fill: none;
+  height: 16px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.2;
+  width: 16px;
+}
+
 .speed-control {
   align-items: center;
   display: inline-flex;
@@ -1370,7 +1395,14 @@ textarea:focus {
 }
 
 @media (max-width: 980px) {
+  /* Let the document grow so the sticky header's containing block spans the whole page. */
+  html,
   body {
+    height: auto;
+  }
+
+  body {
+    min-height: 100%;
     overflow: auto;
   }
 
@@ -1402,16 +1434,69 @@ textarea:focus {
 
   .viewer-area {
     order: 1;
+  }
+
+  /* Wide view only rearranges the desktop columns, so it has no job here. */
+  .viewer-toggle {
+    display: none;
+  }
+
+  /*
+   * Video lessons: flatten the viewer area so only the video itself sticks below the header.
+   * The speed/fullscreen bar, lesson actions and resources scroll normally, leaving the rest
+   * of the screen for the transcript and contents.
+   */
+  .course-mode.video-lesson-mode .viewer-area,
+  .course-mode.video-lesson-mode .viewer-shell {
+    display: contents;
+  }
+
+  .course-mode.video-lesson-mode .viewer {
+    background: var(--viewer-stage);
+    order: 1;
     position: sticky;
-    top: 64px;
+    top: var(--topbar-height, 64px);
     z-index: 10;
+  }
+
+  .course-mode.video-lesson-mode .viewer video {
+    max-height: 45vh;
+    max-height: 45svh;
+  }
+
+  .course-mode.video-lesson-mode .playback-controls,
+  .course-mode.video-lesson-mode .lesson-bar,
+  .course-mode.video-lesson-mode .resource-strip {
+    order: 2;
+  }
+
+  .course-mode.video-lesson-mode .lesson-bar {
+    background: var(--course-chrome);
+    color: white;
+  }
+
+  .playback-controls {
+    background: var(--course-chrome);
+    border: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 0;
+    display: flex;
+    justify-content: space-between;
+    left: auto;
+    padding: 8px 24px;
+    position: static;
+    top: auto;
+  }
+
+  .fullscreen-button {
+    display: inline-flex;
   }
 
   .sidebar {
     border-right: 0;
     display: block;
     max-height: none;
-    order: 2;
+    order: 3;
     overflow: visible;
   }
 
@@ -1430,7 +1515,7 @@ textarea:focus {
 
   .study-grid {
     grid-template-columns: 1fr;
-    order: 3;
+    order: 4;
   }
 
   .viewer {
@@ -1520,12 +1605,53 @@ textarea:focus {
     padding-right: 14px;
   }
 
+  .topbar {
+    align-items: center;
+    display: grid;
+    gap: 8px;
+    grid-template-areas:
+      "brand theme logout"
+      "menus menus menus";
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    padding-bottom: 10px;
+    padding-top: 10px;
+  }
+
+  .topbar .eyebrow {
+    display: none;
+  }
+
+  .topbar > div:first-child {
+    grid-area: brand;
+    min-width: 0;
+  }
+
   .topbar h1 {
     font-size: 18px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .topbar-actions {
-    flex-direction: row;
+    display: contents;
+  }
+
+  .theme-toggle {
+    grid-area: theme;
+  }
+
+  #logoutButton {
+    grid-area: logout;
+  }
+
+  .category-menus {
+    grid-area: menus;
+  }
+
+  .playback-controls {
+    padding-left: 14px;
+    padding-right: 14px;
   }
 
   .category-menus {
@@ -1546,18 +1672,8 @@ textarea:focus {
     font-size: 19px;
   }
 
-  .playback-controls {
-    left: 10px;
-    top: 10px;
-  }
-
   .shortcut-hint {
     display: none;
-  }
-
-  .viewer-toggle {
-    right: 10px;
-    top: 10px;
   }
 
   .tutorial-reader-header {
@@ -1598,5 +1714,17 @@ textarea:focus {
 
   .cue {
     grid-template-columns: 46px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 980px) and (max-height: 560px) and (orientation: landscape) {
+  .course-mode.video-lesson-mode .viewer {
+    position: relative;
+    top: auto;
+  }
+
+  .course-mode.video-lesson-mode .viewer video {
+    max-height: calc(100vh - var(--topbar-height, 64px));
+    max-height: calc(100svh - var(--topbar-height, 64px));
   }
 }
